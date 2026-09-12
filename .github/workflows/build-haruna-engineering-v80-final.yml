@@ -1,0 +1,134 @@
+name: Build Haruna Engineering V80 APK FINAL
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "haruna_app_v80.html"
+      - ".github/workflows/build-haruna-engineering-v80-final.yml"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify full V80 app source
+        shell: bash
+        run: |
+          set -e
+          test -f haruna_app_v80.html
+          test -s haruna_app_v80.html
+
+          SIZE=$(wc -c < haruna_app_v80.html)
+          echo "Haruna V80 source size: $SIZE bytes"
+
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "ERROR: haruna_app_v80.html looks incomplete. Expected the full V80 app."
+            exit 1
+          fi
+
+          grep -q "HARUNA ENGINEERING V80" haruna_app_v80.html
+          grep -q 'id="home"' haruna_app_v80.html
+          grep -q "startupV80" haruna_app_v80.html
+
+      - name: Prepare web app
+        shell: bash
+        run: |
+          mkdir -p www
+          cp haruna_app_v80.html www/index.html
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Create Capacitor Android project
+        shell: bash
+        run: |
+          cat > package.json <<'EOF'
+          {
+            "name": "haruna-engineering-v80",
+            "version": "1.0.0",
+            "private": true,
+            "dependencies": {
+              "@capacitor/android": "^7.0.0",
+              "@capacitor/core": "^7.0.0"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "^7.0.0"
+            }
+          }
+          EOF
+
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.harunaengineering.app",
+            "appName": "Haruna Engineering",
+            "webDir": "www",
+            "server": {
+              "androidScheme": "https"
+            }
+          }
+          EOF
+
+          npm install
+          npx cap add android
+          npx cap sync android
+
+          test -s android/app/src/main/assets/public/index.html
+          BUNDLED_SIZE=$(wc -c < android/app/src/main/assets/public/index.html)
+          echo "Bundled app size: $BUNDLED_SIZE bytes"
+
+          if [ "$BUNDLED_SIZE" -lt 500000 ]; then
+            echo "ERROR: Bundled V80 app is incomplete."
+            exit 1
+          fi
+
+      - name: Set Android version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle")
+          if not p.exists():
+              p = Path("android/app/build.gradle.kts")
+
+          text = p.read_text()
+          text = text.replace("versionCode 1", "versionCode 80")
+          text = text.replace('versionName "1.0"', 'versionName "1.0-v80"')
+          text = text.replace("versionCode = 1", "versionCode = 80")
+          text = text.replace('versionName = "1.0"', 'versionName = "1.0-v80"')
+          p.write_text(text)
+          PY
+
+      - name: Build installable APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp android/app/build/outputs/apk/debug/app-debug.apk output/Haruna-Engineering-V80-FINAL.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Haruna-Engineering-V80-FINAL-APK
+          path: output/Haruna-Engineering-V80-FINAL.apk
+          if-no-files-found: error
+          retention-days: 30
