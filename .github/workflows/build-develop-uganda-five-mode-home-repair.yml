@@ -1,0 +1,211 @@
+name: Build develop.uganda five-mode APK home repair
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/*home-repair*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Unpack and apply home repair
+        shell: bash
+        run: |
+          test -f develop_uganda_five_mode_source.zip
+          unzip -q develop_uganda_five_mode_source.zip -d source
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("source")
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if new in text:
+                  print(f"{label}: already repaired")
+                  return
+              if old not in text:
+                  raise SystemExit(f"{label}: expected source text was not found")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+              print(f"{label}: repaired")
+
+          replace_once(
+              root / "build.gradle.kts",
+              'id("com.android.application") version "8.9.1" apply false',
+              'id("com.android.application") version "8.10.1" apply false',
+              "Android Gradle Plugin",
+          )
+
+          replace_once(
+              root / "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt",
+              "selectAllOnFocus = true",
+              "setSelectAllOnFocus(true)",
+              "Status Cam input helper",
+          )
+
+          console = root / "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV28012ProWorkflowConsole.kt"
+          old_ribbon = (
+              '        return "${snapshot.project} • ${snapshot.camera} • S%03d T%03d | MIC $input | BAT $bat | ${snapshot.freeGb}GB | THERM ${snapshot.thermal} | READY ${snapshot.readiness}%"\n'
+              '            .format(Locale.US, snapshot.scene, snapshot.take)'
+          )
+          new_ribbon = (
+              '        // Values such as a project name are saved user text, not a format string.\n'
+              "        // Passing them as arguments keeps '%' characters in that text literal.\n"
+              '        return String.format(\n'
+              '            Locale.US,\n'
+              '            "%s • %s • S%03d T%03d | MIC %s | BAT %s | %dGB | THERM %s | READY %d%%",\n'
+              '            snapshot.project,\n'
+              '            snapshot.camera,\n'
+              '            snapshot.scene,\n'
+              '            snapshot.take,\n'
+              '            input,\n'
+              '            bat,\n'
+              '            snapshot.freeGb,\n'
+              '            snapshot.thermal,\n'
+              '            snapshot.readiness\n'
+              '        )'
+          )
+          replace_once(console, old_ribbon, new_ribbon, "Workflow status text")
+
+          manifest = root / "app/src/main/AndroidManifest.xml"
+          old_main = (
+              '        <activity\n'
+              '            android:name=".DevelopUgandaAllProCameraActivity"\n'
+              '            android:screenOrientation="portrait"\n'
+              '            android:exported="false"/>'
+          )
+          new_main = (
+              '        <activity\n'
+              '            android:name=".DevelopUgandaAllProCameraActivity"\n'
+              '            android:screenOrientation="portrait"\n'
+              '            android:exported="true">\n\n'
+              '            <intent-filter>\n'
+              '                <action android:name="android.intent.action.MAIN"/>\n'
+              '                <category android:name="android.intent.category.LAUNCHER"/>\n'
+              '            </intent-filter>\n\n'
+              '        </activity>'
+          )
+          replace_once(manifest, old_main, new_main, "Main Camera launcher")
+
+          old_hub = (
+              '        <activity\n'
+              '            android:name=".DevelopUgandaGeneralHubActivity"\n'
+              '            android:screenOrientation="portrait"\n'
+              '            android:exported="true">\n\n'
+              '            <intent-filter>\n'
+              '                <action android:name="android.intent.action.MAIN"/>\n'
+              '                <category android:name="android.intent.category.LAUNCHER"/>\n'
+              '            </intent-filter>\n\n'
+              '        </activity>'
+          )
+          new_hub = (
+              '        <activity\n'
+              '            android:name=".DevelopUgandaGeneralHubActivity"\n'
+              '            android:screenOrientation="portrait"\n'
+              '            android:exported="false"/>'
+          )
+          replace_once(manifest, old_hub, new_hub, "Workflow hub retention")
+
+          navigator = root / "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          old_navigator_header = (
+              '        val strip =\n'
+              '            LinearLayout(activity).apply {\n'
+          )
+          new_navigator_header = (
+              '        val navigator =\n'
+              '            LinearLayout(activity).apply {\n'
+              '                orientation = LinearLayout.VERTICAL\n'
+              '            }\n\n'
+              '        val strip =\n'
+              '            LinearLayout(activity).apply {\n'
+          )
+          replace_once(navigator, old_navigator_header, new_navigator_header, "Camera workflow entry header")
+
+          old_navigator_tail = (
+              '        return strip\n'
+              '    }\n'
+              '}'
+          )
+          new_navigator_tail = (
+              '        navigator.addView(strip)\n\n'
+              '        // The workflow console remains available from every camera page, but\n'
+              '        // it is no longer the launcher: Main Camera always opens first.\n'
+              '        val workflow =\n'
+              '            TextView(activity).apply {\n'
+              '                tag = "v281_workflow_entry"\n'
+              '                text = "WORKFLOW / PRODUCTION TOOLS"\n'
+              '                gravity = Gravity.CENTER\n'
+              '                textSize = 7.4f\n'
+              '                typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)\n'
+              '                setTextColor(0xFFD8B867.toInt())\n'
+              '                setPadding(dp(5), dp(5), dp(5), dp(5))\n'
+              '                background = GradientDrawable().apply {\n'
+              '                    cornerRadius = dp(8).toFloat()\n'
+              '                    setColor(0x1CF3C25B)\n'
+              '                }\n'
+              '                setOnClickListener {\n'
+              '                    if (!canNavigate()) {\n'
+              '                        Toast.makeText(\n'
+              '                            activity,\n'
+              '                            "Stop recording before opening workflow tools",\n'
+              '                            Toast.LENGTH_SHORT\n'
+              '                        ).show()\n'
+              '                        return@setOnClickListener\n'
+              '                    }\n'
+              '                    activity.startActivity(\n'
+              '                        Intent(activity, DevelopUgandaGeneralHubActivity::class.java).apply {\n'
+              '                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)\n'
+              '                        }\n'
+              '                    )\n'
+              '                }\n'
+              '            }\n'
+              '        navigator.addView(\n'
+              '            workflow,\n'
+              '            LinearLayout.LayoutParams(\n'
+              '                LinearLayout.LayoutParams.MATCH_PARENT,\n'
+              '                dp(27)\n'
+              '            ).apply {\n'
+              '                topMargin = dp(4)\n'
+              '            }\n'
+              '        )\n\n'
+              '        return navigator\n'
+              '    }\n'
+              '}'
+          )
+          replace_once(navigator, old_navigator_tail, new_navigator_tail, "Camera workflow entry")
+          PY
+
+          grep -F 'id("com.android.application") version "8.10.1" apply false' source/build.gradle.kts
+          grep -F 'setSelectAllOnFocus(true)' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt
+          grep -F 'Passing them as arguments keeps' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV28012ProWorkflowConsole.kt
+          grep -F 'android:name=".DevelopUgandaAllProCameraActivity"' source/app/src/main/AndroidManifest.xml
+          grep -F 'WORKFLOW / PRODUCTION TOOLS' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+
+      - name: Build debug APK
+        working-directory: source
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: develop-uganda-five-mode-apk-home-repair
+          path: source/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
