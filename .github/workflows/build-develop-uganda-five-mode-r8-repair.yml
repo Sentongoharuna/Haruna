@@ -1,0 +1,58 @@
+name: Build develop.uganda five-mode APK R8 repair
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/*r8-repair*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Unpack and apply R8 build repair
+        shell: bash
+        run: |
+          test -f develop_uganda_five_mode_source.zip
+          unzip -q develop_uganda_five_mode_source.zip -d source
+          source_file="source/build.gradle.kts"
+          test -f "$source_file"
+
+          if grep -Fq 'id("com.android.application") version "8.10.1" apply false' "$source_file"; then
+            echo "R8-compatible Android Gradle Plugin already present."
+          elif grep -Fq 'id("com.android.application") version "8.9.1" apply false' "$source_file"; then
+            sed -i 's/id("com.android.application") version "8.9.1" apply false/id("com.android.application") version "8.10.1" apply false/' "$source_file"
+          else
+            echo "Expected Android Gradle Plugin version was not found in the source archive." >&2
+            exit 1
+          fi
+
+          grep -F 'id("com.android.application") version "8.10.1" apply false' "$source_file"
+
+      - name: Build debug APK
+        working-directory: source
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: develop-uganda-five-mode-apk-r8-repair
+          path: source/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
