@@ -1,4 +1,4 @@
-name: Build develop.uganda five-mode APK home repair
+name: Build develop.uganda five-mode APK keep-home repair
 
 on:
   workflow_dispatch:
@@ -87,43 +87,17 @@ jobs:
           replace_once(console, old_ribbon, new_ribbon, "Workflow status text")
 
           manifest = root / "app/src/main/AndroidManifest.xml"
-          old_main = (
-              '        <activity\n'
-              '            android:name=".DevelopUgandaAllProCameraActivity"\n'
-              '            android:screenOrientation="portrait"\n'
-              '            android:exported="false"/>'
-          )
-          new_main = (
-              '        <activity\n'
-              '            android:name=".DevelopUgandaAllProCameraActivity"\n'
+          home_launcher = (
+              'android:name=".DevelopUgandaGeneralHubActivity"\n'
               '            android:screenOrientation="portrait"\n'
               '            android:exported="true">\n\n'
               '            <intent-filter>\n'
               '                <action android:name="android.intent.action.MAIN"/>\n'
-              '                <category android:name="android.intent.category.LAUNCHER"/>\n'
-              '            </intent-filter>\n\n'
-              '        </activity>'
+              '                <category android:name="android.intent.category.LAUNCHER"/>'
           )
-          replace_once(manifest, old_main, new_main, "Main Camera launcher")
-
-          old_hub = (
-              '        <activity\n'
-              '            android:name=".DevelopUgandaGeneralHubActivity"\n'
-              '            android:screenOrientation="portrait"\n'
-              '            android:exported="true">\n\n'
-              '            <intent-filter>\n'
-              '                <action android:name="android.intent.action.MAIN"/>\n'
-              '                <category android:name="android.intent.category.LAUNCHER"/>\n'
-              '            </intent-filter>\n\n'
-              '        </activity>'
-          )
-          new_hub = (
-              '        <activity\n'
-              '            android:name=".DevelopUgandaGeneralHubActivity"\n'
-              '            android:screenOrientation="portrait"\n'
-              '            android:exported="false"/>'
-          )
-          replace_once(manifest, old_hub, new_hub, "Workflow hub retention")
+          if home_launcher not in manifest.read_text(encoding="utf-8"):
+              raise SystemExit("Workflow Home launcher was not found; leaving the existing first page untouched is required")
+          print("Workflow Home launcher: retained")
 
           navigator = root / "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
           old_navigator_header = (
@@ -147,8 +121,8 @@ jobs:
           )
           new_navigator_tail = (
               '        navigator.addView(strip)\n\n'
-              '        // The workflow console remains available from every camera page, but\n'
-              '        // it is no longer the launcher: Main Camera always opens first.\n'
+              '        // The workflow console remains available from every camera page and\n'
+              '        // stays as the launcher: cameras open from the existing first page.\n'
               '        val workflow =\n'
               '            TextView(activity).apply {\n'
               '                tag = "v281_workflow_entry"\n'
@@ -197,7 +171,7 @@ jobs:
           grep -F 'id("com.android.application") version "8.10.1" apply false' source/build.gradle.kts
           grep -F 'setSelectAllOnFocus(true)' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt
           grep -F 'Passing them as arguments keeps' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV28012ProWorkflowConsole.kt
-          grep -F 'android:name=".DevelopUgandaAllProCameraActivity"' source/app/src/main/AndroidManifest.xml
+          grep -F 'android:name=".DevelopUgandaGeneralHubActivity"' source/app/src/main/AndroidManifest.xml
           grep -F 'WORKFLOW / PRODUCTION TOOLS' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
 
       - name: Build debug APK
@@ -206,6 +180,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: develop-uganda-five-mode-apk-home-repair
+          name: develop-uganda-five-mode-apk-keep-home-repair
           path: source/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
