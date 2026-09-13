@@ -375,7 +375,8 @@ jobs:
           ! grep -F 'WORKFLOW / PRODUCTION TOOLS' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
           ! grep -F 'text = destination.label' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
 
-          # Preserve the valid Android TextView setter, not the earlier broken Kotlin property.
+          # Repair the older ZIP variant that used an unresolved Kotlin property.
+          perl -0pi -e 's/\bselectAllOnFocus\s*=\s*true\b/setSelectAllOnFocus(true)/g' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt
           grep -F 'setSelectAllOnFocus(true)' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt
           ! grep -F 'selectAllOnFocus = true' source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt
 
@@ -391,4 +392,3 @@ jobs:
           name: develop-uganda-five-mode-camera-faces-apk
           path: source/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
