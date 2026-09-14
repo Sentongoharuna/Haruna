@@ -78,6 +78,16 @@ jobs:
               if result.returncode != 0:
                   raise SystemExit(f"Unable to apply {label} patch.")
 
+          def without_file_diff(payload: bytes, path: str) -> bytes:
+              text = payload.decode("utf-8")
+              start = text.find(f"diff --git a/{path} b/{path}\n")
+              if start < 0:
+                  raise SystemExit(f"Expected correction diff not found: {path}")
+              end = text.find("diff --git ", start + 1)
+              if end < 0:
+                  end = len(text)
+              return (text[:start] + text[end:]).encode("utf-8")
+
           # Start from the existing FIVEMODS 8 workflow's complete base patch.
           apply_patch("FIVEMODS 8 base", embedded_gzip_block("FIVEMODS_8_PATCH"))
 
@@ -945,7 +955,29 @@ jobs:
           e2D/Iybi1Pqd+F8Jv7LwabW2HPCJBbcC9GlVtwJUBJd91Jd0q69VwQWBdQETNWdhHLjbQix5CSt9
           KaouSnI7WNWh1hSgJovsoW3LB1XX/88Hbf0PQLeDTsYzAAA=
           """))
-          apply_patch("FIVEMODS 8 colour correction", correction_payload)
+          correction_without_styles = without_file_diff(
+              correction_payload,
+              "app/src/main/res/values/styles.xml",
+          )
+          apply_patch("FIVEMODS 8 colour correction", correction_without_styles)
+
+          # Apply only the three approved colour-resource bindings without
+          # depending on unrelated styles.xml header or whitespace layout.
+          styles_file = Path("source/app/src/main/res/values/styles.xml")
+          styles_text = styles_file.read_text(encoding="utf-8")
+          styles_text = styles_text.replace(
+              "@color/fivemods8_system_chrome",
+              "@color/du_system_chrome",
+          ).replace(
+              "@color/fivemods8_accent",
+              "@color/du_accent",
+          )
+          if (
+              "@color/du_system_chrome" not in styles_text
+              or "@color/du_accent" not in styles_text
+          ):
+              raise SystemExit("Expected AppTheme colour bindings not found.")
+          styles_file.write_text(styles_text, encoding="utf-8")
 
           # Retain the existing fixed-workflow Kotlin compiler repairs.
           status_policy = Path(
