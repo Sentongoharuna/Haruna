@@ -1,4 +1,4 @@
-name: FIVEMODS 9 - Interview and workflow home repair APK
+name: FIVEMODS 9 - Interview, workflow home and camera handoff repair APK
 
 on:
   workflow_dispatch:
@@ -1068,6 +1068,8 @@ jobs:
           AUDIT = Path('f9-repair-audit')
           CONSOLE = 'DevelopUgandaV28012ProWorkflowConsole.kt'
           CAMERA = 'DevelopUgandaCameraActivity.kt'
+          LIVE = 'DevelopUgandaLiveActivity.kt'
+          NAVIGATOR = 'DevelopUgandaCameraModeNavigator.kt'
 
 
           def require(ok, message):
@@ -1294,19 +1296,173 @@ jobs:
               return text
 
 
+          def repair_navigator(text):
+              """Restore the real F8 camera-release handoff without changing the F9 strip UI."""
+              text = exact(
+                  text,
+                  'object DevelopUgandaCameraModeNavigator {\n\n    private data class Destination(',
+                  'object DevelopUgandaCameraModeNavigator {\n\n'
+                  '    // Existing F8 device-settle interval. The departing CameraX session\n'
+                  '    // is released before the next mode is opened.\n'
+                  '    private const val CAMERA_HANDOFF_SETTLE_MS = 850L\n\n'
+                  '    private data class Destination(',
+                  'camera handoff interval',
+              )
+              text = exact(
+                  text,
+                  '''        dp: (Int) -> Int,
+                  canNavigate: () -> Boolean
+              ): View {
+                  val strip =''',
+                  '''        dp: (Int) -> Int,
+                  canNavigate: () -> Boolean,
+                  releaseCamera: () -> Unit
+              ): View {
+                  var handoffInFlight = false
+                  val strip =''',
+                  'camera release callback',
+              )
+              old = block(text, '        fun navigateTo(index: Int) {', '\n\n        destinations.forEachIndexed', 'mode navigation')
+              new = '''        fun navigateTo(index: Int) {
+                      val destination = destinations.getOrNull(index) ?: return
+                      if (destination.page == current || handoffInFlight) return
+
+                      if (!canNavigate()) {
+                          Toast.makeText(
+                              activity,
+                              "Stop recording before changing camera mode",
+                              Toast.LENGTH_SHORT
+                          ).show()
+                          return
+                      }
+
+                      // Restore the real F8 handoff order: release this mode first,
+                      // allow the physical camera/surface to settle, then open a fresh
+                      // destination Activity. REORDER_TO_FRONT could revive a stale,
+                      // already-paused camera Activity.
+                      handoffInFlight = true
+                      releaseCamera()
+                      strip.postDelayed(
+                          {
+                              if (!activity.isFinishing && !activity.isDestroyed) {
+                                  if (DevelopUgandaV270Guidance.safeOpen(activity, destination.activity)) {
+                                      activity.finish()
+                                  }
+                              }
+                          },
+                          CAMERA_HANDOFF_SETTLE_MS
+                      )
+                  }'''
+              text = exact(text, old, new, 'ordered mode navigation')
+              require('FLAG_ACTIVITY_REORDER_TO_FRONT' not in text, 'Stale-Activity reorder flag survived')
+              return text
+
+
+          def repair_camera_handoff(text):
+              """Give the shared F9 CameraActivity its existing F8 pre-switch release hook."""
+              anchor = '''    private fun isInterviewCamera(): Boolean =
+                  additiveModeProfile()?.page == DevelopUgandaCameraPage.INTERVIEW
+
+          '''
+              helper = '''    /** Release only while idle, before the shared navigator opens another mode. */
+              private fun releaseCameraForModeSwitch() {
+                  if (recording != null) return
+                  try {
+                      provider?.unbindAll()
+                  } catch (_: Exception) {
+                  }
+                  try {
+                      overlayEffect?.close()
+                  } catch (_: Exception) {
+                  }
+                  // ProcessCameraProvider is process-wide. Clear this Activity's handle
+                  // so its later onDestroy cannot unbind the destination's new session.
+                  provider = null
+                  overlayEffect = null
+                  camera = null
+                  videoCapture = null
+                  imageCapture = null
+              }
+
+          '''
+              text = exact(text, anchor, anchor + helper, 'CameraActivity release hook')
+              text = exact(
+                  text,
+                  '                    canNavigate = { recording == null && !statusSegmentRestartPending }\n',
+                  '                    canNavigate = { recording == null && !statusSegmentRestartPending },\n'
+                  '                    releaseCamera = ::releaseCameraForModeSwitch\n',
+                  'CameraActivity navigator callback',
+              )
+              return text
+
+
+          def repair_live_handoff(text):
+              """Retain Live's provider long enough to release it before a mode switch."""
+              text = exact(
+                  text,
+                  '''    private var camera: Camera? = null
+              private var videoCapture: VideoCapture<Recorder>? = null''',
+                  '''    private var liveCameraProvider: ProcessCameraProvider? = null
+              private var camera: Camera? = null
+              private var videoCapture: VideoCapture<Recorder>? = null''',
+                  'Live provider handle',
+              )
+              anchor = '    private fun loadLiveIdentity() {'
+              helper = '''    /** Release Live while idle before opening another camera mode. */
+              private fun releaseLiveCameraForModeSwitch() {
+                  if (recording != null) return
+                  try {
+                      liveCameraProvider?.unbindAll()
+                  } catch (_: Exception) {
+                  }
+                  try {
+                      overlayEffect?.close()
+                  } catch (_: Exception) {
+                  }
+                  liveCameraProvider = null
+                  overlayEffect = null
+                  camera = null
+                  videoCapture = null
+              }
+
+          '''
+              text = exact(text, anchor, helper + anchor, 'Live release hook')
+              text = exact(
+                  text,
+                  '                val provider =\n                    future.get()\n\n                provider.unbindAll()',
+                  '                val provider =\n                    future.get()\n\n'
+                  '                liveCameraProvider = provider\n                provider.unbindAll()',
+                  'Live provider assignment',
+              )
+              text = exact(
+                  text,
+                  '                canNavigate = { recording == null }\n',
+                  '                canNavigate = { recording == null },\n'
+                  '                releaseCamera = ::releaseLiveCameraForModeSwitch\n',
+                  'Live navigator callback',
+              )
+              return text
+
+
           def finish():
               before = inventory()
               camera_path = PACKAGE / CAMERA
               console_path = PACKAGE / CONSOLE
+              live_path = PACKAGE / LIVE
+              navigator_path = PACKAGE / NAVIGATOR
               camera_before, console_before = read(camera_path), read(console_path)
+              live_before, navigator_before = read(live_path), read(navigator_path)
               verify_scrims(camera_before)
               console_patch_hash = restore_console()
-              camera_path.write_text(repair_camera(camera_before))
+              camera_path.write_text(repair_camera_handoff(repair_camera(camera_before)))
+              live_path.write_text(repair_live_handoff(live_before))
+              navigator_path.write_text(repair_navigator(navigator_before))
               after = inventory()
               changed = sorted(k for k in before.keys() | after.keys() if before.get(k) != after.get(k))
-              expected = sorted(f'app/src/main/java/com/sentongoharuna/pulse/{n}' for n in (CAMERA, CONSOLE))
+              expected = sorted(f'app/src/main/java/com/sentongoharuna/pulse/{n}' for n in (CAMERA, CONSOLE, LIVE, NAVIGATOR))
               require(changed == expected, f'Unexpected source changes: {changed}')
-              for name, old in ((CAMERA, camera_before), (CONSOLE, console_before)):
+              for name, old in ((CAMERA, camera_before), (CONSOLE, console_before),
+                                (LIVE, live_before), (NAVIGATOR, navigator_before)):
                   new = read(PACKAGE / name)
                   relative = f'app/src/main/java/com/sentongoharuna/pulse/{name}'
                   with (AUDIT / 'source-repairs.diff').open('a') as output:
@@ -1323,7 +1479,7 @@ jobs:
               leftovers = list(SOURCE.rglob('*.rej')) + list(SOURCE.rglob('*.orig'))
               require(not leftovers, f'Rejected/backup patch artifacts found: {leftovers}')
               report = {
-                  'scope': 'Existing F9 Status Policy plus focused opacity, Interview negotiation, and real F8 console dependency repairs',
+                  'scope': 'Existing F9 Status Policy plus focused opacity, Interview negotiation, real F8 console dependency, and camera handoff repairs',
                   'full_f8_rebase': False,
                   'restored_real_f8_console_patch_sha256': console_patch_hash,
                   'changed_after_f9': changed,
@@ -1391,16 +1547,16 @@ jobs:
         run: |
           set -euo pipefail
           test -s source/app/build/outputs/apk/debug/app-debug.apk
-          cp source/app/build/outputs/apk/debug/app-debug.apk f9-repair-audit/FIVEMODS-9-Interview-Home-Repair.apk
+          cp source/app/build/outputs/apk/debug/app-debug.apk f9-repair-audit/FIVEMODS-9-Repaired-Cameras.apk
           cd f9-repair-audit
-          sha256sum FIVEMODS-9-Interview-Home-Repair.apk > APK-SHA256.txt
+          sha256sum FIVEMODS-9-Repaired-Cameras.apk > APK-SHA256.txt
 
-      - name: Upload FIVEMODS 9 Interview and workflow home repair APK
+      - name: Upload FIVEMODS 9 repaired cameras APK
         uses: actions/upload-artifact@v4
         with:
-          name: FIVEMODS-9-Interview-Home-Repair-${{ github.run_number }}
+          name: FIVEMODS-9-Repaired-Cameras-${{ github.run_number }}
           path: |
-            f9-repair-audit/FIVEMODS-9-Interview-Home-Repair.apk
+            f9-repair-audit/FIVEMODS-9-Repaired-Cameras.apk
             f9-repair-audit/APK-SHA256.txt
             f9-repair-audit/verification.json
             f9-repair-audit/source-repairs.diff
