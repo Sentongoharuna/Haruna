@@ -979,6 +979,25 @@ jobs:
               raise SystemExit("Expected AppTheme colour bindings not found.")
           styles_file.write_text(styles_text, encoding="utf-8")
 
+          # Kotlin 2.2 requires the existing @ColorInt annotations on
+          # getter-only XML resource properties to use the getter target.
+          # This changes no colour value, token, or app behavior.
+          theme_reader = Path(
+              "source/app/src/main/java/com/sentongoharuna/pulse/"
+              "DevelopUgandaFivemods8Theme.kt"
+          )
+          theme_reader_text = theme_reader.read_text(encoding="utf-8")
+          theme_reader_text, getter_annotations = re.subn(
+              r"(?m)^(\s*)@ColorInt\s+val\s+",
+              r"\1@get:ColorInt val ",
+              theme_reader_text,
+          )
+          if getter_annotations != 10:
+              raise SystemExit(
+                  "Expected ten XML resource getter annotations in the theme reader."
+              )
+          theme_reader.write_text(theme_reader_text, encoding="utf-8")
+
           # Retain the existing fixed-workflow Kotlin compiler repairs.
           status_policy = Path(
               "source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt"
