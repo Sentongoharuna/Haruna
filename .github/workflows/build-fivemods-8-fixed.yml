@@ -1,0 +1,139 @@
+name: Build develop.uganda Fivemods.8 fixed APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-fivemods-8-fixed.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Unpack Fivemods.8 and apply Kotlin type repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f develop_uganda_five_mode_source.zip
+          test -f .github/workflows/build-fivemods-8.yml
+          rm -rf source
+          unzip -q develop_uganda_five_mode_source.zip -d source
+
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import re
+          import subprocess
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/build-fivemods-8.yml").read_text(
+              encoding="utf-8"
+          )
+
+          def embedded_gzip_block(name: str) -> bytes:
+              opening = workflow.index(f"base64 -d <<'{name}'")
+              body_start = workflow.index("\n", opening) + 1
+              closing = re.search(
+                  rf"^\s*{re.escape(name)}\s*$",
+                  workflow[body_start:],
+                  flags=re.MULTILINE,
+              )
+              if closing is None:
+                  raise SystemExit(f"Missing closing block: {name}")
+              encoded = re.sub(
+                  r"\s+",
+                  "",
+                  workflow[body_start:body_start + closing.start()],
+              )
+              return gzip.decompress(base64.b64decode(encoded))
+
+          subprocess.run(
+              ["patch", "-d", "source", "-p1", "--batch", "--forward"],
+              input=embedded_gzip_block("FIVEMODS_8_PATCH"),
+              check=True,
+          )
+
+          status_policy = Path(
+              "source/app/src/main/java/com/sentongoharuna/pulse/"
+              "DevelopUgandaStatusPolicy.kt"
+          )
+          status_policy.parent.mkdir(parents=True, exist_ok=True)
+          status_policy.write_bytes(
+              embedded_gzip_block("FIVEMODS_8_STATUS_POLICY")
+          )
+          status_policy.write_text(
+              re.sub(
+                  r"\bselectAllOnFocus\s*=\s*true\b",
+                  "setSelectAllOnFocus(true)",
+                  status_policy.read_text(encoding="utf-8"),
+              ),
+              encoding="utf-8",
+          )
+
+          repairs = [
+              (
+                  Path(
+                      "source/app/src/main/java/com/sentongoharuna/pulse/"
+                      "DevelopUgandaInterviewAnnotatedExporter.kt"
+                  ),
+                  "val interviewOverlays =\n            mutableListOf(",
+                  "val interviewOverlays: MutableList<TextureOverlay> =\n"
+                  "            mutableListOf(",
+              ),
+              (
+                  Path(
+                      "source/app/src/main/java/com/sentongoharuna/pulse/"
+                      "DevelopUgandaVideoTagExporter.kt"
+                  ),
+                  "val overlays =\n            mutableListOf(",
+                  "val overlays: MutableList<TextureOverlay> =\n"
+                  "            mutableListOf(",
+              ),
+          ]
+
+          for target, old, new in repairs:
+              source = target.read_text(encoding="utf-8")
+              if "import androidx.media3.effect.TextureOverlay" not in source:
+                  source = source.replace(
+                      "import androidx.media3.effect.TextOverlay\n",
+                      "import androidx.media3.effect.TextOverlay\n"
+                      "import androidx.media3.effect.TextureOverlay\n",
+                      1,
+                  )
+              if old not in source:
+                  raise SystemExit(
+                      f"Expected Fivemods.8 overlay block not found: {target}"
+                  )
+              target.write_text(
+                  source.replace(old, new, 1),
+                  encoding="utf-8",
+              )
+          PY
+
+      - name: Build Fivemods.8 fixed debug APK
+        working-directory: source
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fivemods.8-fixed-apk
+          path: source/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
