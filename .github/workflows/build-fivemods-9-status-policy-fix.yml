@@ -1,4 +1,4 @@
-name: Build Develop Uganda FIVEMODS 9 Status Policy fix APK
+name: FIVEMODS 9 - Interview and workflow home repair APK
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/build-fivemods-9-status-policy-fix.yml"
       - "develop_uganda_five_mode_source.zip"
+      - ".github/workflows/build-fivemods-8.yml"
 
 permissions:
   contents: read
@@ -37,7 +38,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f develop_uganda_five_mode_source.zip
+          test -f develop_uganda_five_mode_source.zip || { echo "::error::Missing source ZIP"; exit 1; }
+          test -f .github/workflows/build-fivemods-8.yml || { echo "::error::Missing real F8 workflow needed to restore its home-console repair"; exit 1; }
+          test ! -e f9-repair-audit || { echo "::error::Repair audit already exists; fresh checkout required"; exit 1; }
           rm -rf source .fivemods9hotfix
           unzip -q develop_uganda_five_mode_source.zip -d source
           mkdir -p .fivemods9hotfix
@@ -1042,6 +1045,325 @@ jobs:
           d5bmHKF/+W/v4328j/fxPt7H+3gf7+N9vI/38T7ex/t4H+/jfbyP9/E+3sf7eB/v4328j/fxPt7H
           +3gf7+N9/H83/g9iwUBEADACAA==
           FIVEMODS_9_HOTFIX_PAYLOAD
+          cat > .fivemods9hotfix/repair_existing_f9.py <<'F9_REPAIR_PY'
+          """Focused repairs to the existing F9 Status Policy build; no F9 replacement."""
+          from __future__ import annotations
+
+          import ast
+          import base64
+          import difflib
+          import gzip
+          import hashlib
+          import importlib.util
+          import json
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+          import xml.etree.ElementTree as ET
+
+          SOURCE = Path('source')
+          PACKAGE = SOURCE / 'app/src/main/java/com/sentongoharuna/pulse'
+          PAYLOAD = Path('.fivemods9hotfix')
+          AUDIT = Path('f9-repair-audit')
+          CONSOLE = 'DevelopUgandaV28012ProWorkflowConsole.kt'
+          CAMERA = 'DevelopUgandaCameraActivity.kt'
+
+
+          def require(ok, message):
+              if not ok:
+                  raise SystemExit(message)
+
+
+          def read(path):
+              require(path.is_file(), f'Required file missing: {path}')
+              return path.read_text(encoding='utf-8')
+
+
+          def exact(text, old, new, label):
+              found = text.count(old)
+              require(found == 1, f'{label}: expected exactly one anchor, found {found}')
+              return text.replace(old, new)
+
+
+          def block(text, start, end, label):
+              require(text.count(start) == 1, f'{label}: start anchor is missing or ambiguous')
+              require(text.count(end) == 1, f'{label}: end anchor is missing or ambiguous')
+              first = text.index(start)
+              last = text.index(end)
+              require(last > first, f'{label}: anchors are out of order')
+              return text[first:last]
+
+
+          def module(path, name):
+              spec = importlib.util.spec_from_file_location(name, path)
+              value = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(value)
+              return value
+
+
+          def inventory():
+              return {p.relative_to(SOURCE).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                      for p in SOURCE.rglob('*') if p.is_file()}
+
+
+          SCRIM_SITES = (
+              ('focusReticleView', '        root.addView(\n            focusReticleView,', 38),
+              ('motionGuardView', '        val motionParams =', 66),
+              ('lightAdvisorView', '        val lightParams =', 66),
+              ('audioGuardView', '        val audioGuardParams =', 66),
+              ('thermalGuardView', '        val thermalGuardParams =', 66),
+              ('cameraExperienceBannerView', '        previewNarrationPanel.addView(\n            cameraExperienceBannerView', 82),
+          )
+
+
+          def verify_scrims(text):
+              for name, end, alpha in SCRIM_SITES:
+                  selected = block(text, f'        {name} =\n', end, name)
+                  token = f'DevelopUgandaFivemods8Theme.surfaceScrim({alpha})'
+                  require(selected.count(token) == 1, f'{name}: original alpha {alpha} is absent or ambiguous')
+                  require('du_viewfinder_indicator_backing' not in selected, f'{name}: opaque backing regression')
+
+
+          def prepare():
+              AUDIT.mkdir(exist_ok=True)
+              prep_path = PAYLOAD / 'prepare_fivemods9_hotfix.py'
+              text = read(prep_path)
+              old = block(text, '    backing = ', '\n    quality = package /', 'legacy opacity pass')
+              # Keep the original alpha at each explicitly named view. No first-N search.
+              replacement = '''    # The six translucent view backings already have their correct alpha.
+              # Validate their uniquely named view blocks; do not substitute an 80% scrim.
+              for view_name, end, alpha in (
+                  ("focusReticleView", "        root.addView(\\n            focusReticleView,", 38),
+                  ("motionGuardView", "        val motionParams =", 66),
+                  ("lightAdvisorView", "        val lightParams =", 66),
+                  ("audioGuardView", "        val audioGuardParams =", 66),
+                  ("thermalGuardView", "        val thermalGuardParams =", 66),
+                  ("cameraExperienceBannerView", "        previewNarrationPanel.addView(\\n            cameraExperienceBannerView", 82),
+              ):
+                  start = f"        {view_name} =\\n"
+                  if camera_text.count(start) != 1 or camera_text.count(end) != 1:
+                      fail(f"Missing or ambiguous original-alpha view anchors: {view_name}")
+                  first, last = camera_text.index(start), camera_text.index(end)
+                  if last <= first:
+                      fail(f"Out-of-order original-alpha view anchors: {view_name}")
+                  selected = camera_text[first:last]
+                  if selected.count(f"DevelopUgandaFivemods8Theme.surfaceScrim({alpha})") != 1:
+                      fail(f"Original alpha {alpha} is missing or ambiguous in {view_name}")
+                  if "du_viewfinder_indicator_backing" in selected:
+                      fail(f"Opaque backing regression in {view_name}")
+          '''
+              text = exact(text, old, replacement, 'remove first-N opacity changes')
+              # Do not let a capped substitution conceal multiple plugin declarations.
+              old = block(text, '    root_text, count = re.subn(', '    if count != 1:', 'AGP regex')
+              require('count=1,' in old, 'Unexpected AGP repair shape')
+              pattern = r'(id\("com\.android\.application"\)\s+version\s+")[^"]+(")'
+              replacement = (
+                  f'    plugin_pattern = {pattern!r}\n'
+                  '    if len(re.findall(plugin_pattern, root_text)) != 1:\n'
+                  '        fail("Expected exactly one Android Gradle Plugin declaration.")\n'
+                  + old.replace('        count=1,\n', '')
+              )
+              text = exact(text, old, replacement, 'count AGP anchors before replacement')
+              text = exact(text, '            if anchor not in text:', '            if text.count(anchor) != 1:', 'compiler import uniqueness')
+              text = exact(text, 'text.replace(anchor, anchor + "import androidx.media3.effect.TextureOverlay\\n", 1)', 'text.replace(anchor, anchor + "import androidx.media3.effect.TextureOverlay\\n")', 'uncapped compiler import')
+              text = exact(text, 'write(path, text.replace(old, new, 1))', 'write(path, text.replace(old, new))', 'uncapped compiler repair')
+              ast.parse(text)
+              prep_path.write_text(text)
+
+              f9_path = PAYLOAD / 'apply_fivemods9.py'
+              f9 = read(f9_path)
+              old = block(f9, 'def regex(', '\n\ndef copy_payload(', 'F9 regex helper')
+              new = '''def regex(text: str, pattern: str, new: str, label: str, expected: int = 1) -> str:
+              compiled = re.compile(pattern, re.DOTALL)
+              count = len(list(compiled.finditer(text)))
+              if count != expected:
+                  raise SystemExit(f"{label}: expected {expected}, found {count}")
+              result, changed = compiled.subn(new, text)
+              if changed != expected:
+                  raise SystemExit(f"{label}: expected {expected} substitutions, found {changed}")
+              return result
+          '''
+              f9 = exact(f9, old, new, 'F9 regex count-before-substitute')
+              ast.parse(f9)
+              f9_path.write_text(f9)
+              helper = module(f9_path, 'f9_strict_helper')
+              for invalid in ('missing', 'anchor anchor'):
+                  try:
+                      helper.regex(invalid, r'anchor', 'changed', 'strict regex regression')
+                  except SystemExit:
+                      pass
+                  else:
+                      raise SystemExit('Strict regex accepted missing/duplicate matches')
+              require(helper.regex('anchor', r'anchor', 'changed', 'unique regex') == 'changed', 'Unique regex failed')
+              print('PASS: original alpha sites anchored; regex checks all matches before substitution')
+
+
+          def restore_console():
+              workflow = read(Path('.github/workflows/build-fivemods-8.yml'))
+              marker = "base64 -d <<'FIVEMODS_8_PATCH'"
+              require(workflow.count(marker) == 1, 'Expected exactly one REAL FIVEMODS_8_PATCH block')
+              after = workflow.split(marker)[1].splitlines()[1:]
+              endings = [i for i, line in enumerate(after) if line.strip() == 'FIVEMODS_8_PATCH']
+              require(len(endings) == 1, 'Missing or ambiguous FIVEMODS_8_PATCH terminator')
+              raw = ''.join(line.strip() for line in after[:endings[0]])
+              patch = gzip.decompress(base64.b64decode(raw, validate=True)).decode('utf-8')
+              sections = re.split(r'(?=^diff --git )', patch, flags=re.MULTILINE)
+              relative = f'app/src/main/java/com/sentongoharuna/pulse/{CONSOLE}'
+              selected = [s for s in sections if s.startswith(f'diff --git a/{relative} b/{relative}\n')]
+              require(len(selected) == 1, 'Real F8 workflow-console repair is absent or ambiguous')
+              # This is the existing F8 dependency repair, not a reconstructed page.
+              payload = selected[0]
+              require(len(re.findall(r'^@@ ', payload, flags=re.MULTILINE)) == 1 and 'fun statusRibbon(' in payload,
+                      'Unexpected F8 console patch: review required before applying')
+              path = AUDIT / 'restored-real-f8-console.patch'
+              path.write_text(payload)
+              for dry_run in (True, False):
+                  command = ['patch', '-d', str(SOURCE), '-p1', '--batch', '--forward', '--fuzz=0']
+                  if dry_run:
+                      command.append('--dry-run')
+                  result = subprocess.run(command, input=payload, text=True, capture_output=True)
+                  require(result.returncode == 0, 'F8 console restore conflicted; neither side was dropped:\n' + result.stdout + result.stderr)
+              return hashlib.sha256(payload.encode()).hexdigest()
+
+
+          def repair_camera(text):
+              original = text
+              old = '''            val selectedFpsRange =
+                          if (requestedFps > 0) {'''
+              new = '''            val selectedFpsRange =
+                          if (isInterviewCamera()) {
+                              f9InterviewFrameRateRange(cam.cameraInfo)
+                          } else if (requestedFps > 0) {'''
+              text = exact(text, old, new, 'Interview Camera2 FPS selection')
+              anchor = '    private fun f9AttachCaptureTelemetry(previewBuilder: Preview.Builder) {'
+              helper = '''    // Honour the existing Interview profile in BOTH CameraX negotiation and
+              // Camera2 AE. Never choose a faster range merely because it is listed first.
+              private fun f9InterviewFrameRateRange(info: androidx.camera.core.CameraInfo?): android.util.Range<Int>? {
+                  if (!isInterviewCamera() || info == null) return null
+                  val target = requestedVideoFps()
+                  return info.supportedFrameRateRanges
+                      .filter { it.upper == target }
+                      .minByOrNull { it.lower }
+              }
+
+          '''
+              text = exact(text, anchor, helper + anchor, 'Interview FPS helper insertion')
+              old = '''                val videoBuilder =
+                              VideoCapture.Builder(recorder)
+
+                          if (dynamicRange != DynamicRange.SDR) {'''
+              new = '''                val videoBuilder =
+                              VideoCapture.Builder(recorder)
+
+                          if (isInterviewCamera()) {
+                              val frameRange = f9InterviewFrameRateRange(selectedCameraInfo)
+                              if (frameRange != null) {
+                                  videoBuilder.setTargetFrameRate(frameRange)
+                              }
+                              android.util.Log.i("DU_INTERVIEW_REPAIR", "CameraX FPS request: $frameRange; profile: ${requestedVideoFps()}")
+                          }
+
+                          if (dynamicRange != DynamicRange.SDR) {'''
+              text = exact(text, old, new, 'Interview VideoCapture FPS request')
+              sensor = block(text, '    override fun onSensorChanged(', '\n    private fun startGnssMonitor()', 'sensor callback')
+              old = '''        ) {
+                      ambientLux ='''
+              new = '''        ) {
+                      val firstLightReading = ambientLux == null
+                      ambientLux ='''
+              sensor_new = exact(sensor, old, new, 'first real light-sensor sample')
+              old = '''            updateLightAdvisor()
+                      return'''
+              new = '''            updateLightAdvisor()
+                      // The first reading often arrives AFTER bindCamera. Complete the
+                      // existing F9 low-light setup then, without changing a running take.
+                      if (firstLightReading && recording == null) {
+                          f9ApplyInterviewExposure()
+                      }
+                      return'''
+              sensor_new = exact(sensor_new, old, new, 'late sensor exposure setup')
+              text = exact(text, sensor, sensor_new, 'sensor callback repair')
+              verify_scrims(text)
+              # Assert that the existing F9 exposure policy/locks and output path survived.
+              for start, end, label in (
+                  ('    private fun f9ApplyInterviewExposure()', '    private fun f9UpdateAudioTelemetry(', 'F9 EV policy and manual locks'),
+                  ('    private fun f9ShowInterviewSettingsSheet()', '    private fun f9ConstrainInterviewControls()', 'F9 settings/readouts'),
+              ):
+                  require(block(original, start, end, label) == block(text, start, end, label), f'{label} unexpectedly changed')
+              return text
+
+
+          def finish():
+              before = inventory()
+              camera_path = PACKAGE / CAMERA
+              console_path = PACKAGE / CONSOLE
+              camera_before, console_before = read(camera_path), read(console_path)
+              verify_scrims(camera_before)
+              console_patch_hash = restore_console()
+              camera_path.write_text(repair_camera(camera_before))
+              after = inventory()
+              changed = sorted(k for k in before.keys() | after.keys() if before.get(k) != after.get(k))
+              expected = sorted(f'app/src/main/java/com/sentongoharuna/pulse/{n}' for n in (CAMERA, CONSOLE))
+              require(changed == expected, f'Unexpected source changes: {changed}')
+              for name, old in ((CAMERA, camera_before), (CONSOLE, console_before)):
+                  new = read(PACKAGE / name)
+                  relative = f'app/src/main/java/com/sentongoharuna/pulse/{name}'
+                  with (AUDIT / 'source-repairs.diff').open('a') as output:
+                      output.writelines(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f'a/{relative}', f'b/{relative}'))
+              verify_home()
+              exported = read(PACKAGE / 'DevelopUgandaFivemods9DualOutputExporter.kt')
+              payload_exported = read(PAYLOAD / 'app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods9DualOutputExporter.kt')
+              require(exported == payload_exported, 'F9 dual-output exporter changed')
+              hud = read(PACKAGE / 'DevelopUgandaInterviewHudView.kt')
+              require(hud == read(PAYLOAD / 'app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewHudView.kt'), 'F9 HUD changed')
+              require('setSelectAllOnFocus(true)' in read(PACKAGE / 'DevelopUgandaStatusPolicy.kt'), 'Status Policy fix lost')
+              require('version "8.11.1"' in read(SOURCE / 'build.gradle.kts'), 'AGP repair lost')
+              require('version "2.2.0"' in read(SOURCE / 'build.gradle.kts'), 'Kotlin repair lost')
+              leftovers = list(SOURCE.rglob('*.rej')) + list(SOURCE.rglob('*.orig'))
+              require(not leftovers, f'Rejected/backup patch artifacts found: {leftovers}')
+              report = {
+                  'scope': 'Existing F9 Status Policy plus focused opacity, Interview negotiation, and real F8 console dependency repairs',
+                  'full_f8_rebase': False,
+                  'restored_real_f8_console_patch_sha256': console_patch_hash,
+                  'changed_after_f9': changed,
+                  'all_other_f9_files_byte_preserved': True,
+                  'source_sha256': after,
+              }
+              (AUDIT / 'verification.json').write_text(json.dumps(report, indent=2) + '\n')
+              print('PASS: full-home dependencies, launcher and Newsroom route present; F9 exporter/HUD/Status/build fixes preserved')
+
+
+          def verify_home():
+              ns = '{http://schemas.android.com/apk/res/android}'
+              manifest = ET.fromstring(read(SOURCE / 'app/src/main/AndroidManifest.xml'))
+              registered = {a.get(ns + 'name') for a in manifest.findall('application/activity')}
+              launchers = [a.get(ns + 'name') for a in manifest.findall('application/activity')
+                           if any(c.get(ns + 'name') == 'android.intent.category.LAUNCHER' for c in a.findall('intent-filter/category'))]
+              require(launchers == ['.DevelopUgandaGeneralHubActivity'], f'Wrong launcher: {launchers}')
+              require('.DevelopUgandaNewsroomActivity' in registered, 'Newsroom registration missing')
+              hub = read(PACKAGE / 'DevelopUgandaGeneralHubActivity.kt')
+              for anchor in ('setContentView(buildHome())', 'page.addView(buildV28012ProWorkflowConsole())',
+                             '1 • PREPARE • PROJECT / HEALTH / AUDIO / CAMERA',
+                             '2 • SHOOT • FRAME / LIGHT / FOCUS / RECORD',
+                             'DevelopUgandaNewsroomActivity::class.java'):
+                  require(hub.count(anchor) == 1, f'Home workflow anchor absent or ambiguous: {anchor}')
+              require(hub.count('routeCard(') == 36, 'Home route-card inventory changed')
+              targets = set(re.findall(r'(DevelopUganda\w+Activity)::class\.java', hub))
+              for name in targets:
+                  require('.' + name in registered, f'Home destination unregistered: {name}')
+              console = read(PACKAGE / CONSOLE)
+              require('"%s • %s • S%03d T%03d | MIC %s | BAT %s | %dGB | THERM %s | READY %d%%"' in console,
+                      'F8 percent-safe status ribbon missing')
+              newsroom = read(PACKAGE / 'DevelopUgandaNewsroomActivity.kt')
+              require('        showHome()' in newsroom and 'private fun openReportCamera()' in newsroom, 'Original second home/camera route missing')
+
+
+          if __name__ == '__main__':
+              require(len(sys.argv) == 2 and sys.argv[1] in ('prepare', 'finish'), 'Usage: repair_existing_f9.py prepare|finish')
+              {'prepare': prepare, 'finish': finish}[sys.argv[1]]()
+          F9_REPAIR_PY
+          python3 .fivemods9hotfix/repair_existing_f9.py prepare
           python3 .fivemods9hotfix/prepare_fivemods9_hotfix.py source
           test -f source/app/src/main/res/values/develop_uganda_theme.xml
           test -f source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods9DualOutputExporter.kt
@@ -1059,14 +1381,38 @@ jobs:
           if old in verified or new not in verified:
               raise SystemExit("Status Policy select-all compatibility repair was not verified")
           PYTHON
+          python3 .fivemods9hotfix/repair_existing_f9.py finish
 
       - name: Build debug APK
         working-directory: source
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
-      - name: Upload FIVEMODS 9 Status Policy fix APK
+      - name: Name and checksum the repaired APK
+        run: |
+          set -euo pipefail
+          test -s source/app/build/outputs/apk/debug/app-debug.apk
+          cp source/app/build/outputs/apk/debug/app-debug.apk f9-repair-audit/FIVEMODS-9-Interview-Home-Repair.apk
+          cd f9-repair-audit
+          sha256sum FIVEMODS-9-Interview-Home-Repair.apk > APK-SHA256.txt
+
+      - name: Upload FIVEMODS 9 Interview and workflow home repair APK
         uses: actions/upload-artifact@v4
         with:
-          name: fivemods.9-status-policy-fix-interview-dual-output-apk
-          path: source/app/build/outputs/apk/debug/app-debug.apk
+          name: FIVEMODS-9-Interview-Home-Repair-${{ github.run_number }}
+          path: |
+            f9-repair-audit/FIVEMODS-9-Interview-Home-Repair.apk
+            f9-repair-audit/APK-SHA256.txt
+            f9-repair-audit/verification.json
+            f9-repair-audit/source-repairs.diff
+          if-no-files-found: error
+
+      - name: Upload repair verification and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIVEMODS-9-Repair-Checks-${{ github.run_number }}
+          path: |
+            f9-repair-audit/*.json
+            f9-repair-audit/*.diff
+            f9-repair-audit/*.patch
           if-no-files-found: error
