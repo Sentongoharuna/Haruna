@@ -59,7 +59,13 @@ jobs:
               marker = f"base64 -d <<'{name}'"
               marker_start = base_workflow.index(marker)
               payload_start = base_workflow.index("\n", marker_start) + 1
-              payload_end = base_workflow.index(f"\n{name}\n", payload_start)
+              closing_marker = re.search(
+                  rf"(?m)^[ \t]*{re.escape(name)}[ \t]*(?:\r?\n|$)",
+                  base_workflow[payload_start:],
+              )
+              if closing_marker is None:
+                  raise SystemExit(f"Embedded block terminator not found: {name}")
+              payload_end = payload_start + closing_marker.start()
               encoded = re.sub(r"\s+", "", base_workflow[payload_start:payload_end])
               return gzip.decompress(base64.b64decode(encoded))
 
