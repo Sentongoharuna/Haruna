@@ -1,0 +1,186 @@
+name: Build Develop Uganda FIVEMODS 8 colour-corrected APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-fivemods-8.yml"
+      - ".github/workflows/build-fivemods-8-colour-corrected.yml"
+      - "develop_uganda_five_mode_source.zip"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Rebuild FIVEMODS 8 and apply approved colour correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f develop_uganda_five_mode_source.zip
+          test -f .github/workflows/build-fivemods-8.yml
+
+          rm -rf source
+          unzip -q develop_uganda_five_mode_source.zip -d source
+
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import re
+          import subprocess
+          from pathlib import Path
+
+          base_workflow = Path(".github/workflows/build-fivemods-8.yml").read_text(
+              encoding="utf-8"
+          )
+
+          def embedded_gzip_block(name: str) -> bytes:
+              marker = f"base64 -d <<'{name}'"
+              marker_start = base_workflow.index(marker)
+              payload_start = base_workflow.index("\n", marker_start) + 1
+              payload_end = base_workflow.index(f"\n{name}\n", payload_start)
+              encoded = re.sub(r"\s+", "", base_workflow[payload_start:payload_end])
+              return gzip.decompress(base64.b64decode(encoded))
+
+          def apply_patch(label: str, payload: bytes) -> None:
+              result = subprocess.run(
+                  ["patch", "-d", "source", "-p1", "--batch", "--forward"],
+                  input=payload,
+                  check=False,
+              )
+              if result.returncode != 0:
+                  raise SystemExit(f"Unable to apply {label} patch.")
+
+          # Start from the existing FIVEMODS 8 workflow's complete base patch.
+          apply_patch("FIVEMODS 8 base", embedded_gzip_block("FIVEMODS_8_PATCH"))
+
+          # Apply the approved colour-only correction after the base pass.
+          correction_payload = gzip.decompress(base64.b64decode("""
+          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
+          """))
+          apply_patch("FIVEMODS 8 colour correction", correction_payload)
+
+          # Retain the existing fixed-workflow Kotlin compiler repairs.
+          status_policy = Path(
+              "source/app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaStatusPolicy.kt"
+          )
+          status_policy.parent.mkdir(parents=True, exist_ok=True)
+          status_policy.write_bytes(embedded_gzip_block("FIVEMODS_8_STATUS_POLICY"))
+          status_text = status_policy.read_text(encoding="utf-8")
+          status_text = re.sub(
+              r"(fun TextView\.setSelectAllOnFocus\(\) \{\s*)",
+              r"\1    setSelectAllOnFocus(true)\n",
+              status_text,
+              count=1,
+          )
+          status_policy.write_text(status_text, encoding="utf-8")
+
+          repairs = [
+              (
+                  Path(
+                      "source/app/src/main/java/com/sentongoharuna/pulse/InterviewAnnotatedExporter.kt"
+                  ),
+                  "val interviewOverlays =\n            mutableListOf(",
+                  "val interviewOverlays: MutableList<TextureOverlay> =\n            mutableListOf(",
+              ),
+              (
+                  Path(
+                      "source/app/src/main/java/com/sentongoharuna/pulse/VideoTagExporter.kt"
+                  ),
+                  "val overlays =\n            mutableListOf(",
+                  "val overlays: MutableList<TextureOverlay> =\n            mutableListOf(",
+              ),
+          ]
+          for target, old, new in repairs:
+              source = target.read_text(encoding="utf-8")
+              if "import com.sentongoharuna.pulse.TextureOverlay" not in source:
+                  source = source.replace(
+                      "import com.sentongoharuna.pulse.TextOverlay\n",
+                      "import com.sentongoharuna.pulse.TextOverlay\n"
+                      "import com.sentongoharuna.pulse.TextureOverlay\n",
+                      1,
+                  )
+              if old not in source:
+                  raise SystemExit(f"Expected Kotlin repair site not found: {target}")
+              target.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Build debug APK
+        working-directory: source
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload colour-corrected APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fivemods.8-colour-corrected-apk
+          path: source/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
