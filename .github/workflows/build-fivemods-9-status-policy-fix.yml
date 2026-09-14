@@ -26,8 +26,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK 36
+        uses: android-actions/setup-android@v4
+        with:
+          # Do not use the action's obsolete default `tools` package.
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
       - name: Set up Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
@@ -1571,4 +1574,6 @@ jobs:
             f9-repair-audit/*.json
             f9-repair-audit/*.diff
             f9-repair-audit/*.patch
-          if-no-files-found: error
+          # An early SDK failure happens before the audit directory exists;
+          # this evidence step must never replace the real build error.
+          if-no-files-found: warn
