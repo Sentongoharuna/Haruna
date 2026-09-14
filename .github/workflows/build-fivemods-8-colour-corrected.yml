@@ -985,26 +985,28 @@ jobs:
           )
           status_policy.parent.mkdir(parents=True, exist_ok=True)
           status_policy.write_bytes(embedded_gzip_block("FIVEMODS_8_STATUS_POLICY"))
-          status_text = status_policy.read_text(encoding="utf-8")
-          status_text = re.sub(
-              r"(fun TextView\.setSelectAllOnFocus\(\) \{\s*)",
-              r"\1    setSelectAllOnFocus(true)\n",
-              status_text,
-              count=1,
+          status_policy.write_text(
+              re.sub(
+                  r"\bselectAllOnFocus\s*=\s*true\b",
+                  "setSelectAllOnFocus(true)",
+                  status_policy.read_text(encoding="utf-8"),
+              ),
+              encoding="utf-8",
           )
-          status_policy.write_text(status_text, encoding="utf-8")
 
           repairs = [
               (
                   Path(
-                      "source/app/src/main/java/com/sentongoharuna/pulse/InterviewAnnotatedExporter.kt"
+                      "source/app/src/main/java/com/sentongoharuna/pulse/"
+                      "DevelopUgandaInterviewAnnotatedExporter.kt"
                   ),
                   "val interviewOverlays =\n            mutableListOf(",
                   "val interviewOverlays: MutableList<TextureOverlay> =\n            mutableListOf(",
               ),
               (
                   Path(
-                      "source/app/src/main/java/com/sentongoharuna/pulse/VideoTagExporter.kt"
+                      "source/app/src/main/java/com/sentongoharuna/pulse/"
+                      "DevelopUgandaVideoTagExporter.kt"
                   ),
                   "val overlays =\n            mutableListOf(",
                   "val overlays: MutableList<TextureOverlay> =\n            mutableListOf(",
@@ -1012,11 +1014,11 @@ jobs:
           ]
           for target, old, new in repairs:
               source = target.read_text(encoding="utf-8")
-              if "import com.sentongoharuna.pulse.TextureOverlay" not in source:
+              if "import androidx.media3.effect.TextureOverlay" not in source:
                   source = source.replace(
-                      "import com.sentongoharuna.pulse.TextOverlay\n",
-                      "import com.sentongoharuna.pulse.TextOverlay\n"
-                      "import com.sentongoharuna.pulse.TextureOverlay\n",
+                      "import androidx.media3.effect.TextOverlay\n",
+                      "import androidx.media3.effect.TextOverlay\n"
+                      "import androidx.media3.effect.TextureOverlay\n",
                       1,
                   )
               if old not in source:
