@@ -29,10 +29,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Set up Gradle 8.11.1
+      - name: Set up Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.11.1"
+          gradle-version: "8.13"
 
       - name: Rebuild FIVEMODS 8 and apply approved colour correction
         shell: bash
@@ -1024,6 +1024,21 @@ jobs:
               if old not in source:
                   raise SystemExit(f"Expected Kotlin repair site not found: {target}")
               target.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          # Build-only D8/R8 compatibility update. AGP 8.11.1 brings a newer
+          # D8/R8 than the failing 8.9.x line, without changing app code,
+          # controls, routing, settings, defaults, capture, or encoding.
+          root_build = Path("source/build.gradle.kts")
+          root_build_text = root_build.read_text(encoding="utf-8")
+          root_build_text, agp_replacements = re.subn(
+              r'(id\("com\.android\.application"\)\s+version\s+")[^"]+(")',
+              r"\g<1>8.11.1\g<2>",
+              root_build_text,
+              count=1,
+          )
+          if agp_replacements != 1:
+              raise SystemExit("Expected Android Gradle Plugin declaration not found.")
+          root_build.write_text(root_build_text, encoding="utf-8")
           PY
 
       - name: Build debug APK
