@@ -1,0 +1,88 @@
+name: 00 - DEVELOP UGANDA - COMMITTED SOURCE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "ci/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/00-build-develop-uganda-committed-source.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: develop-uganda-committed-source-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK 36
+        uses: android-actions/setup-android@v3
+      - shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify committed-source contracts
+        run: python3 ci/verify_source_contracts.py
+
+      - name: Compile app and test APK
+        run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest --stacktrace
+
+      - name: Run five-mode instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back virtualscene -camera-front emulated
+          script: gradle --no-daemon :app:connectedDebugAndroidTest --stacktrace
+
+      - name: Verify and name APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          cp "$apk" Develop-Uganda-FIVEMODS-11-Field-Reporter.apk
+          sha256sum Develop-Uganda-FIVEMODS-11-Field-Reporter.apk > Develop-Uganda-FIVEMODS-11-Field-Reporter-SHA256.txt
+
+      - name: Upload APK at the top of the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-APK-DEVELOP-UGANDA-FIVEMODS-11-${{ github.run_number }}
+          path: |
+            Develop-Uganda-FIVEMODS-11-Field-Reporter.apk
+            Develop-Uganda-FIVEMODS-11-Field-Reporter-SHA256.txt
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIVEMODS-11-VERIFICATION-${{ github.run_number }}
+          path: |
+            build/verification/**
+            app/build/reports/**
+            app/build/outputs/androidTest-results/**
+          if-no-files-found: warn
