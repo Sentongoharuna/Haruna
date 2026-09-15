@@ -1,0 +1,150 @@
+name: 00 - FIVEMODS 11 - ONE CLICK BUILD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fivemods-11-one-click-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  install-verify-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install committed source when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_zip="Develop-Uganda-FIVEMODS-11-Committed-Source.zip"
+          source_hash="dc56134a3093fe9f47cd8b5d16ae7395885eb97392c580d5ab6178ae6c115e2d"
+          workflow_name="00-fivemods-11-one-click-build.yml"
+
+          if test -f app/build.gradle.kts && test -f ci/verify_source_contracts.py; then
+            echo "Committed FIVEMODS 11 source is already installed."
+            exit 0
+          fi
+
+          test -s "$source_zip" || {
+            echo "SOURCE MISSING: upload $source_zip to the repository root, then run this workflow again."
+            exit 1
+          }
+          echo "$source_hash  $source_zip" | sha256sum --check --strict
+
+          staging="$(mktemp -d)"
+          trap 'rm -rf -- "$staging"' EXIT
+          unzip -q "$source_zip" -d "$staging"
+          source_root="$staging/Develop-Uganda-FIVEMODS-11"
+          test -f "$source_root/app/build.gradle.kts"
+          test -f "$source_root/ci/verify_source_contracts.py"
+
+          mkdir -p archive/workflows .github/workflows
+          shopt -s nullglob
+          for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+            base="$(basename "$workflow")"
+            if test "$base" = "$workflow_name"; then
+              continue
+            fi
+            destination="archive/workflows/${base}.disabled"
+            if git ls-files --error-unmatch "$workflow" >/dev/null 2>&1; then
+              git mv "$workflow" "$destination"
+            else
+              mv "$workflow" "$destination"
+            fi
+          done
+
+          rsync -a --delete "$source_root/app/" app/
+          rsync -a --delete "$source_root/ci/" ci/
+          rsync -a --delete "$source_root/baseline/" baseline/
+          rsync -a "$source_root/archive/" archive/
+          find "$source_root" -maxdepth 1 -type f -exec cp -f -- {} ./ \;
+
+          test -f ".github/workflows/$workflow_name"
+          rm -f -- "$source_zip"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK 36
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build and test tools
+        shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify all protected source contracts
+        run: python3 ci/verify_source_contracts.py
+
+      - name: Compile app and test APK
+        run: gradle --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest --stacktrace
+
+      - name: Run five-mode device tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back virtualscene -camera-front emulated
+          script: gradle --no-daemon :app:connectedDebugAndroidTest --stacktrace
+
+      - name: Name and checksum APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          cp "$apk" Develop-Uganda-FIVEMODS-11-Field-Reporter.apk
+          sha256sum Develop-Uganda-FIVEMODS-11-Field-Reporter.apk > Develop-Uganda-FIVEMODS-11-Field-Reporter-SHA256.txt
+
+      - name: Commit ordinary source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "develop.uganda build"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "Committed source already matches this build."
+          else
+            git commit -m "FIVEMODS 11: install verified ordinary source [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-APK-DEVELOP-UGANDA-FIVEMODS-11-${{ github.run_number }}
+          path: |
+            Develop-Uganda-FIVEMODS-11-Field-Reporter.apk
+            Develop-Uganda-FIVEMODS-11-Field-Reporter-SHA256.txt
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIVEMODS-11-VERIFICATION-${{ github.run_number }}
+          path: |
+            build/verification/**
+            app/build/reports/**
+            app/build/outputs/androidTest-results/**
+          if-no-files-found: warn
