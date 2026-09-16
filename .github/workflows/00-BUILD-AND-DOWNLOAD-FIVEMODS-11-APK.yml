@@ -8,7 +8,7 @@ on:
       - ".github/workflows/00-BUILD-AND-DOWNLOAD-FIVEMODS-11-APK.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: fivemods-11-one-click-${{ github.ref }}
@@ -141,21 +141,6 @@ jobs:
             echo "- Cloud emulator device tests: ${device_test_outcome^^}"
             echo "- Download artifact: 00-DOWNLOAD-FIVEMODS-11-APK-RUN-${{ github.run_number }}"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Commit ordinary source
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "develop.uganda build"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          if git diff --cached --quiet; then
-            echo "Committed source already matches this build."
-          else
-            git commit -m "FIVEMODS 11: install compiled ordinary source [skip ci]"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
