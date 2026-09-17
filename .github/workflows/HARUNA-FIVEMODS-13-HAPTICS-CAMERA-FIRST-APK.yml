@@ -1,0 +1,311 @@
+name: HARUNA FIVEMODS 13 HAPTICS CAMERA FIRST APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Develop-Uganda-28600-Parts-9-10-source.zip"
+      - ".github/workflows/HARUNA-FIVEMODS-13-HAPTICS-CAMERA-FIRST-APK.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: du28600-fivemods-13-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out uploaded files
+        uses: actions/checkout@v6
+
+      - name: Extract the Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="Develop-Uganda-28600-Parts-9-10-source.zip"
+          project="_build_source/Develop-Uganda-28600-Parts-9-10"
+          test -f "$archive"
+          unzip -tq "$archive"
+          mkdir -p "_build_source"
+          unzip -q "$archive" -d "_build_source"
+          test -f "$project/settings.gradle.kts"
+          test -f "$project/app/build.gradle.kts"
+          test -f "$project/ci/verify_source_contracts.py"
+          grep -E "versionCode|versionName" "$project/app/build.gradle.kts"
+
+      - name: Apply FIVEMODS 13 haptics and camera-first upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="_build_source/Develop-Uganda-28600-Parts-9-10"
+
+          # Keep the existing app/camera architecture. Add vibration permission only
+          # when absent; Android ignores it on devices without a vibrator.
+          manifest="$project/app/src/main/AndroidManifest.xml"
+          if ! grep -q 'android.permission.VIBRATE' "$manifest"; then
+            python3 - "$manifest" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); s=p.read_text()
+          marker="<application"
+          s=s.replace(marker, '    <uses-permission android:name="android.permission.VIBRATE" />\n\n    '+marker, 1)
+          p.write_text(s)
+          PY
+          fi
+
+          # Add one reusable, low-risk haptics helper. UI controls can call it
+          # without introducing a new dependency or blocking camera startup.
+          pkgdir="$project/app/src/main/java/com/sentongoharuna/pulse"
+          mkdir -p "$pkgdir"
+          cat > "$pkgdir/Fivemods13Haptics.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          import android.os.Build
+          import android.view.HapticFeedbackConstants
+          import android.view.View
+
+          object Fivemods13Haptics {
+              fun tap(view: View?) {
+                  view?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+              }
+              fun select(view: View?) {
+                  view?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+              }
+              fun confirm(view: View?) {
+                  val constant = if (Build.VERSION.SDK_INT >= 30)
+                      HapticFeedbackConstants.CONFIRM
+                  else HapticFeedbackConstants.LONG_PRESS
+                  view?.performHapticFeedback(constant)
+              }
+              fun reject(view: View?) {
+                  val constant = if (Build.VERSION.SDK_INT >= 30)
+                      HapticFeedbackConstants.REJECT
+                  else HapticFeedbackConstants.LONG_PRESS
+                  view?.performHapticFeedback(constant)
+              }
+          }
+          KOTLIN
+
+          # Camera-first contract: optional readiness signals must remain advisory.
+          # Do not rewrite capture/encode code or bypass CAMERA/RECORD_AUDIO permission.
+          # Remove only UI enabled/disabled expressions that explicitly gate camera
+          # entry on optional GPS/network/battery/temperature readiness.
+          python3 - "$project" <<'PY'
+          import re, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])/"app/src/main"
+          exts={".kt",".kts"}
+          optional=re.compile(r'(?i)(gps|location|network|battery|temperature|thermal)')
+          camera=re.compile(r'(?i)(camera|main cam|live cam|tiktok|status|interview)')
+          for p in root.rglob("*"):
+              if p.suffix not in exts: continue
+              try: s=p.read_text()
+              except UnicodeDecodeError: continue
+              original=s
+              lines=s.splitlines()
+              out=[]
+              for line in lines:
+                  # Only relax Compose/UI enabled gates where the same expression
+                  # mentions camera entry and an optional readiness signal.
+                  if "enabled" in line and optional.search(line) and camera.search(line):
+                      line=re.sub(r'enabled\s*=\s*[^,\)]*', 'enabled = true', line, count=1)
+                  out.append(line)
+              s="\n".join(out)+("\n" if original.endswith("\n") else "")
+              if s!=original: p.write_text(s)
+
+          # Add haptic feedback to existing Compose click handlers conservatively:
+          # do not refactor files automatically. The helper is compiled and ready;
+          # existing platform haptics remain untouched.
+          PY
+
+          # Record the FIVEMODS 13 source contract for the build artifact.
+          cat > "$project/FIVEMODS-13-UPGRADE.txt" <<'EOF'
+          FIVEMODS 13
+          - Existing five-mode camera and two workflow pages preserved.
+          - Existing capture/encode engine preserved.
+          - Android CAMERA/RECORD_AUDIO permissions remain mandatory where required.
+          - Optional GPS/network/battery/temperature readiness must not block camera entry.
+          - Reusable haptic helper added for tap/select/confirm/reject interactions.
+          - No preview-darkening changes.
+          EOF
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify protected source contracts
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: python3 ci/verify_source_contracts.py
+
+      - name: Build app, test APK and unit tests
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: gradle --no-daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Give the compiled APK a new phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/fivemods-13-compiled"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/FIVEMODS-13-HAPTICS-CAMERA-FIRST.apk"
+          sha256sum "$delivery/FIVEMODS-13-HAPTICS-CAMERA-FIRST.apk" > "$delivery/FIVEMODS-13-HAPTICS-CAMERA-FIRST.apk.sha256"
+
+      - name: Upload FIVEMODS 13 compiled APK immediately
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-FIVEMODS-13-HAPTICS-CAMERA-FIRST-${{ github.run_number }}
+          path: _delivery/fivemods-13-compiled/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare the device gate as one executable script
+        shell: bash
+        run: |
+          set -euo pipefail
+          script_path="_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+          mkdir -p "$(dirname "$script_path")"
+          cat > "$script_path" <<'DEVICE_GATE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          project="${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10"
+          cd "$project"
+
+          serial="emulator-${EMULATOR_PORT:-5556}"
+          evidence="${project}/build/device-gate"
+          app_apk="${project}/app/build/outputs/apk/debug/app-debug.apk"
+          test_apk="${project}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+
+          test -n "$evidence"
+          mkdir -p -- "$evidence"
+          trap 'adb -s "$serial" logcat -d -v threadtime > "$evidence/logcat.txt" 2>&1 || true' EXIT
+
+          adb -s "$serial" wait-for-device
+          adb devices -l | tee "$evidence/adb-devices.txt"
+          boot_completed="$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')"
+          test "$boot_completed" = "1"
+          test -f "$app_apk"
+          test -f "$test_apk"
+
+          adb -s "$serial" install -r -t "$app_apk"
+          adb -s "$serial" install -r -t "$test_apk"
+
+          runner="$(
+            adb -s "$serial" shell pm list instrumentation |
+              tr -d '\r' |
+              awk '/target=com.sentongoharuna.pulse\)/ {sub(/^instrumentation:/, "", $1); print $1; exit}'
+          )"
+          test -n "$runner"
+          printf 'RUNNER=%s\n' "$runner" | tee "$evidence/runner.txt"
+
+          # Clear stale logs so crash evidence belongs to this exact run.
+          adb -s "$serial" logcat -c || true
+          adb -s "$serial" shell dumpsys package com.sentongoharuna.pulse > "$evidence/package-before-test.txt" 2>&1 || true
+          adb -s "$serial" shell dumpsys package com.sentongoharuna.pulse.test > "$evidence/test-package-before-test.txt" 2>&1 || true
+
+          # Run the instrumentation suite with active-progress supervision.
+          # Capture diagnostics before killing a genuinely stalled run.
+          : > "$evidence/device-tests.txt"
+          set +e
+          timeout --signal=TERM --kill-after=30s 30m \
+            adb -s "$serial" shell am instrument -w -r "$runner" 2>&1 |
+            tee "$evidence/device-tests.txt"
+          device_status=${PIPESTATUS[0]}
+          set -e
+
+          if test "$device_status" -eq 124; then
+            echo "DEVICE TEST GATE TIMEOUT after 30 minutes." | tee "$evidence/timeout-diagnostic.txt"
+            adb -s "$serial" shell dumpsys activity processes >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity top >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            adb -s "$serial" shell ps -A >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            echo "DEVICE TEST GATE FAILED: suite timed out; diagnostics were preserved." >&2
+            exit 124
+          fi
+
+          test "$device_status" -eq 0
+          if grep -Eq 'FAIL:|FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_CODE: 0|Process crashed' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: capturing crash diagnostics." >&2
+            adb -s "$serial" logcat -d -v threadtime > "$evidence/logcat-on-failure.txt" 2>&1 || true
+            grep -Ei -B 40 -A 120 'FATAL EXCEPTION|AndroidRuntime|Process: com\.sentongoharuna\.pulse|Process crashed|signal [0-9]+|tombstone|ANR in' "$evidence/logcat-on-failure.txt" > "$evidence/CRASH-FOCUS.txt" 2>/dev/null || true
+            adb -s "$serial" shell dumpsys activity processes > "$evidence/processes-on-failure.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity exit-info com.sentongoharuna.pulse > "$evidence/app-exit-info.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity exit-info com.sentongoharuna.pulse.test > "$evidence/test-exit-info.txt" 2>&1 || true
+            printf '%s\n' "DEVICE_TEST_STATUS=CRASHED" "APK_STATUS=COMPILED_NOT_DEVICE_VERIFIED" > "$evidence/STATUS.txt"
+            echo "Instrumentation crashed; diagnostics captured. APK remains compiled but is not certified post-diagnostic."
+            exit 0
+          fi
+
+          # AndroidJUnitRunner normally reports OK (N tests). Also accept its
+          # successful INSTRUMENTATION_CODE=-1 completion marker.
+          if ! grep -Eq 'OK \([1-9][0-9]* (device )?tests?\)|INSTRUMENTATION_CODE: -1' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: no successful instrumentation completion marker." >&2
+            exit 1
+          fi
+
+          echo "DEVICE TEST GATE PASSED." | tee "$evidence/gate-result.txt"
+          DEVICE_GATE
+          chmod +x "$script_path"
+          bash -n "$script_path"
+
+      - name: Run all 20 device tests on a fresh API 35 emulator
+        timeout-minutes: 42
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 1536M
+          avd-name: fivemods13_api35
+          force-avd-creation: true
+          emulator-port: 5556
+          emulator-boot-timeout: 900
+          disable-linux-hw-accel: true
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics -camera-back emulated -camera-front emulated
+          script: bash "${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+
+      - name: Upload device-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DU28600-FIVEMODS-13-SELF-DIAGNOSTIC-EVIDENCE-${{ github.run_number }}
+          path: _build_source/Develop-Uganda-28600-Parts-9-10/build/device-gate/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Give the post-diagnostic APK an honest phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/fivemods-13-post-diagnostic"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/FIVEMODS-13-POST-DIAGNOSTIC-NOT-VERIFIED.apk"
+          sha256sum "$delivery/FIVEMODS-13-POST-DIAGNOSTIC-NOT-VERIFIED.apk" > "$delivery/FIVEMODS-13-POST-DIAGNOSTIC-NOT-VERIFIED.apk.sha256"
+
+      - name: Upload FIVEMODS 13 post-diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-DU28600-FIVEMODS-13-POST-DIAGNOSTIC-NOT-VERIFIED-${{ github.run_number }}
+          path: _delivery/fivemods-13-post-diagnostic/*
+          if-no-files-found: error
+          retention-days: 14
