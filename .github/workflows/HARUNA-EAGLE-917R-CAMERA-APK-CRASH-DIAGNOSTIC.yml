@@ -1,0 +1,213 @@
+name: HARUNA-EAGLE-917R CAMERA APK CRASH DIAGNOSTIC
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Develop-Uganda-28600-Parts-9-10-source.zip"
+      - ".github/workflows/HARUNA-EAGLE-917R-CAMERA-APK-CRASH-DIAGNOSTIC.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: du28600-haruna-eagle-917r-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out uploaded files
+        uses: actions/checkout@v6
+
+      - name: Extract the Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="Develop-Uganda-28600-Parts-9-10-source.zip"
+          project="_build_source/Develop-Uganda-28600-Parts-9-10"
+          test -f "$archive"
+          unzip -tq "$archive"
+          mkdir -p "_build_source"
+          unzip -q "$archive" -d "_build_source"
+          test -f "$project/settings.gradle.kts"
+          test -f "$project/app/build.gradle.kts"
+          test -f "$project/ci/verify_source_contracts.py"
+          grep -E "versionCode|versionName" "$project/app/build.gradle.kts"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify protected source contracts
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: python3 ci/verify_source_contracts.py
+
+      - name: Build app, test APK and unit tests
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: gradle --no-daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Give the compiled APK a new phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/haruna-eagle-917r-compiled"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/DU28600-HARUNA-EAGLE-917R-COMPILED.apk"
+          sha256sum "$delivery/DU28600-HARUNA-EAGLE-917R-COMPILED.apk" > "$delivery/DU28600-HARUNA-EAGLE-917R-COMPILED.apk.sha256"
+
+      - name: Upload EAGLE 917R compiled APK immediately
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-DU28600-HARUNA-EAGLE-917R-COMPILED-${{ github.run_number }}
+          path: _delivery/haruna-eagle-917r-compiled/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare the device gate as one executable script
+        shell: bash
+        run: |
+          set -euo pipefail
+          script_path="_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+          mkdir -p "$(dirname "$script_path")"
+          cat > "$script_path" <<'DEVICE_GATE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          project="${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10"
+          cd "$project"
+
+          serial="emulator-${EMULATOR_PORT:-5556}"
+          evidence="${project}/build/device-gate"
+          app_apk="${project}/app/build/outputs/apk/debug/app-debug.apk"
+          test_apk="${project}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+
+          test -n "$evidence"
+          mkdir -p -- "$evidence"
+          trap 'adb -s "$serial" logcat -d -v threadtime > "$evidence/logcat.txt" 2>&1 || true' EXIT
+
+          adb -s "$serial" wait-for-device
+          adb devices -l | tee "$evidence/adb-devices.txt"
+          boot_completed="$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')"
+          test "$boot_completed" = "1"
+          test -f "$app_apk"
+          test -f "$test_apk"
+
+          adb -s "$serial" install -r -t "$app_apk"
+          adb -s "$serial" install -r -t "$test_apk"
+
+          runner="$(
+            adb -s "$serial" shell pm list instrumentation |
+              tr -d '\r' |
+              awk '/target=com.sentongoharuna.pulse\)/ {sub(/^instrumentation:/, "", $1); print $1; exit}'
+          )"
+          test -n "$runner"
+          printf 'RUNNER=%s\n' "$runner" | tee "$evidence/runner.txt"
+
+          # Clear stale logs so crash evidence belongs to this exact run.
+          adb -s "$serial" logcat -c || true
+          adb -s "$serial" shell dumpsys package com.sentongoharuna.pulse > "$evidence/package-before-test.txt" 2>&1 || true
+          adb -s "$serial" shell dumpsys package com.sentongoharuna.pulse.test > "$evidence/test-package-before-test.txt" 2>&1 || true
+
+          # Run the instrumentation suite with active-progress supervision.
+          # Capture diagnostics before killing a genuinely stalled run.
+          : > "$evidence/device-tests.txt"
+          set +e
+          timeout --signal=TERM --kill-after=30s 30m \
+            adb -s "$serial" shell am instrument -w -r "$runner" 2>&1 |
+            tee "$evidence/device-tests.txt"
+          device_status=${PIPESTATUS[0]}
+          set -e
+
+          if test "$device_status" -eq 124; then
+            echo "DEVICE TEST GATE TIMEOUT after 30 minutes." | tee "$evidence/timeout-diagnostic.txt"
+            adb -s "$serial" shell dumpsys activity processes >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity top >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            adb -s "$serial" shell ps -A >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            echo "DEVICE TEST GATE FAILED: suite timed out; diagnostics were preserved." >&2
+            exit 124
+          fi
+
+          test "$device_status" -eq 0
+          if grep -Eq 'FAIL:|FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_CODE: 0|Process crashed' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: capturing crash diagnostics." >&2
+            adb -s "$serial" logcat -d -v threadtime > "$evidence/logcat-on-failure.txt" 2>&1 || true
+            grep -Ei -B 40 -A 120 'FATAL EXCEPTION|AndroidRuntime|Process: com\.sentongoharuna\.pulse|Process crashed|signal [0-9]+|tombstone|ANR in' "$evidence/logcat-on-failure.txt" > "$evidence/CRASH-FOCUS.txt" 2>/dev/null || true
+            adb -s "$serial" shell dumpsys activity processes > "$evidence/processes-on-failure.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity exit-info com.sentongoharuna.pulse > "$evidence/app-exit-info.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity exit-info com.sentongoharuna.pulse.test > "$evidence/test-exit-info.txt" 2>&1 || true
+            exit 1
+          fi
+
+          # AndroidJUnitRunner normally reports OK (N tests). Also accept its
+          # successful INSTRUMENTATION_CODE=-1 completion marker.
+          if ! grep -Eq 'OK \([1-9][0-9]* (device )?tests?\)|INSTRUMENTATION_CODE: -1' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: no successful instrumentation completion marker." >&2
+            exit 1
+          fi
+
+          echo "DEVICE TEST GATE PASSED." | tee "$evidence/gate-result.txt"
+          DEVICE_GATE
+          chmod +x "$script_path"
+          bash -n "$script_path"
+
+      - name: Run all 20 device tests on a fresh API 35 emulator
+        timeout-minutes: 42
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 1536M
+          avd-name: du28600_eagle917r_api35
+          force-avd-creation: true
+          emulator-port: 5556
+          emulator-boot-timeout: 900
+          disable-linux-hw-accel: true
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics -camera-back emulated -camera-front emulated
+          script: bash "${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+
+      - name: Upload device-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DU28600-HARUNA-EAGLE-917R-CRASH-DIAGNOSTIC-EVIDENCE-${{ github.run_number }}
+          path: _build_source/Develop-Uganda-28600-Parts-9-10/build/device-gate/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Give the verified APK a new phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/haruna-eagle-917r-device-verified"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/DU28600-HARUNA-EAGLE-917R-DEVICE-VERIFIED.apk"
+          sha256sum "$delivery/DU28600-HARUNA-EAGLE-917R-DEVICE-VERIFIED.apk" > "$delivery/DU28600-HARUNA-EAGLE-917R-DEVICE-VERIFIED.apk.sha256"
+
+      - name: Upload EAGLE 917R device-verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-DU28600-HARUNA-EAGLE-917R-DEVICE-VERIFIED-${{ github.run_number }}
+          path: _delivery/haruna-eagle-917r-device-verified/*
+          if-no-files-found: error
+          retention-days: 14
