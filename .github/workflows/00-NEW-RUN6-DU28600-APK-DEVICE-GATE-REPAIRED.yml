@@ -1,0 +1,201 @@
+name: 00 - NEW RUN 6 DU28600 APK DEVICE GATE REPAIRED
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Develop-Uganda-28600-Parts-9-10-source.zip"
+      - ".github/workflows/00-NEW-RUN6-DU28600-APK-DEVICE-GATE-REPAIRED.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: du28600-run6-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out uploaded files
+        uses: actions/checkout@v6
+
+      - name: Extract the Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="Develop-Uganda-28600-Parts-9-10-source.zip"
+          project="_build_source/Develop-Uganda-28600-Parts-9-10"
+          test -f "$archive"
+          unzip -tq "$archive"
+          mkdir -p "_build_source"
+          unzip -q "$archive" -d "_build_source"
+          test -f "$project/settings.gradle.kts"
+          test -f "$project/app/build.gradle.kts"
+          test -f "$project/ci/verify_source_contracts.py"
+          grep -E "versionCode|versionName" "$project/app/build.gradle.kts"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify protected source contracts
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: python3 ci/verify_source_contracts.py
+
+      - name: Build app, test APK and unit tests
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: gradle --no-daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Give the compiled APK a new phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/run6-compiled"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/DU28600-RUN6-COMPILED.apk"
+          sha256sum "$delivery/DU28600-RUN6-COMPILED.apk" > "$delivery/DU28600-RUN6-COMPILED.apk.sha256"
+
+      - name: Upload RUN 5 compiled APK immediately
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-DU28600-RUN6-COMPILED-${{ github.run_number }}
+          path: _delivery/run6-compiled/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare the device gate as one executable script
+        shell: bash
+        run: |
+          set -euo pipefail
+          script_path="_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+          mkdir -p "$(dirname "$script_path")"
+          cat > "$script_path" <<'DEVICE_GATE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          project="${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10"
+          cd "$project"
+
+          serial="emulator-${EMULATOR_PORT:-5556}"
+          evidence="${project}/build/device-gate"
+          app_apk="${project}/app/build/outputs/apk/debug/app-debug.apk"
+          test_apk="${project}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+
+          test -n "$evidence"
+          mkdir -p -- "$evidence"
+          trap 'adb -s "$serial" logcat -d -v threadtime > "$evidence/logcat.txt" 2>&1 || true' EXIT
+
+          adb -s "$serial" wait-for-device
+          adb devices -l | tee "$evidence/adb-devices.txt"
+          boot_completed="$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')"
+          test "$boot_completed" = "1"
+          test -f "$app_apk"
+          test -f "$test_apk"
+
+          adb -s "$serial" install -r -t "$app_apk"
+          adb -s "$serial" install -r -t "$test_apk"
+
+          runner="$(
+            adb -s "$serial" shell pm list instrumentation |
+              tr -d '\r' |
+              awk '/target=com.sentongoharuna.pulse\)/ {sub(/^instrumentation:/, "", $1); print $1; exit}'
+          )"
+          test -n "$runner"
+          printf 'RUNNER=%s\n' "$runner" | tee "$evidence/runner.txt"
+
+          set +e
+          timeout --signal=TERM --kill-after=30s 20m \
+            adb -s "$serial" shell am instrument -w -r "$runner" 2>&1 |
+            tee "$evidence/device-tests.txt"
+          device_status=${PIPESTATUS[0]}
+          set -e
+
+          if test "$device_status" -eq 124; then
+            echo "DEVICE TEST GATE FAILED: the suite exceeded 20 minutes." >&2
+            exit 124
+          fi
+          test "$device_status" -eq 0
+          if grep -Eq 'FAIL:|FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_CODE: 0' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: instrumentation reported a failure." >&2
+            exit 1
+          fi
+          if ! grep -Eq 'OK \([1-9][0-9]* (device )?tests?\)' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: no non-zero successful test count was reported." >&2
+            exit 1
+          fi
+          DEVICE_GATE
+          chmod +x "$script_path"
+          bash -n "$script_path"
+
+      - name: Enable KVM for the device gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Run all 20 device tests on a fresh API 35 emulator
+        timeout-minutes: 32
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          cores: 2
+          ram-size: 2048M
+          avd-name: du28600_run5_api35
+          force-avd-creation: true
+          emulator-port: 5556
+          emulator-boot-timeout: 600
+          disable-linux-hw-accel: false
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
+          script: bash "${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+
+      - name: Upload device-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DU28600-RUN6-DEVICE-TEST-EVIDENCE-${{ github.run_number }}
+          path: _build_source/Develop-Uganda-28600-Parts-9-10/build/device-gate/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Give the verified APK a new phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/run6-device-verified"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/DU28600-RUN6-DEVICE-VERIFIED.apk"
+          sha256sum "$delivery/DU28600-RUN6-DEVICE-VERIFIED.apk" > "$delivery/DU28600-RUN6-DEVICE-VERIFIED.apk.sha256"
+
+      - name: Upload RUN 5 device-verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-DU28600-RUN6-DEVICE-VERIFIED-${{ github.run_number }}
+          path: _delivery/run6-device-verified/*
+          if-no-files-found: error
+          retention-days: 14
