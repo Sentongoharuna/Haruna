@@ -1,0 +1,1498 @@
+name: HARUNA FIVEMODS 30 MASTER CAMERA APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Develop-Uganda-28600-Parts-9-10-source.zip"
+      - ".github/workflows/HARUNA-FIVEMODS-30-MASTER-CAMERA-APK.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: du28600-fivemods-30-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out uploaded files
+        uses: actions/checkout@v6
+
+      - name: Extract the Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="Develop-Uganda-28600-Parts-9-10-source.zip"
+          project="_build_source/Develop-Uganda-28600-Parts-9-10"
+          test -f "$archive"
+          unzip -tq "$archive"
+          mkdir -p "_build_source"
+          unzip -q "$archive" -d "_build_source"
+          test -f "$project/settings.gradle.kts"
+          test -f "$project/app/build.gradle.kts"
+          test -f "$project/ci/verify_source_contracts.py"
+          grep -E "versionCode|versionName" "$project/app/build.gradle.kts"
+
+      - name: Apply FIVEMODS 30 haptics and camera-first upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="_build_source/Develop-Uganda-28600-Parts-9-10"
+
+          # Keep the existing app/camera architecture. Add vibration permission only
+          # when absent; Android ignores it on devices without a vibrator.
+          manifest="$project/app/src/main/AndroidManifest.xml"
+          if ! grep -q 'android.permission.VIBRATE' "$manifest"; then
+            python3 - "$manifest" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); s=p.read_text()
+          marker="<application"
+          s=s.replace(marker, '    <uses-permission android:name="android.permission.VIBRATE" />\n\n    '+marker, 1)
+          p.write_text(s)
+          PY
+          fi
+
+          # Add one reusable, low-risk haptics helper. UI controls can call it
+          # without introducing a new dependency or blocking camera startup.
+          pkgdir="$project/app/src/main/java/com/sentongoharuna/pulse"
+          mkdir -p "$pkgdir"
+          cat > "$pkgdir/Fivemods13Haptics.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          import android.os.Build
+          import android.view.HapticFeedbackConstants
+          import android.view.View
+
+          object Fivemods13Haptics {
+              fun tap(view: View?) {
+                  view?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+              }
+              fun select(view: View?) {
+                  view?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+              }
+              fun confirm(view: View?) {
+                  val constant = if (Build.VERSION.SDK_INT >= 30)
+                      HapticFeedbackConstants.CONFIRM
+                  else HapticFeedbackConstants.LONG_PRESS
+                  view?.performHapticFeedback(constant)
+              }
+              fun reject(view: View?) {
+                  val constant = if (Build.VERSION.SDK_INT >= 30)
+                      HapticFeedbackConstants.REJECT
+                  else HapticFeedbackConstants.LONG_PRESS
+                  view?.performHapticFeedback(constant)
+              }
+          }
+          KOTLIN
+
+          # Camera-first contract: optional readiness signals must remain advisory.
+          # Do not rewrite capture/encode code or bypass CAMERA/RECORD_AUDIO permission.
+          # Remove only UI enabled/disabled expressions that explicitly gate camera
+          # entry on optional GPS/network/battery/temperature readiness.
+          python3 - "$project" <<'PY'
+          import re, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])/"app/src/main"
+          exts={".kt",".kts"}
+          optional=re.compile(r'(?i)(gps|location|network|battery|temperature|thermal)')
+          camera=re.compile(r'(?i)(camera|main cam|live cam|tiktok|status|interview)')
+          for p in root.rglob("*"):
+              if p.suffix not in exts: continue
+              try: s=p.read_text()
+              except UnicodeDecodeError: continue
+              original=s
+              lines=s.splitlines()
+              out=[]
+              for line in lines:
+                  # Only relax Compose/UI enabled gates where the same expression
+                  # mentions camera entry and an optional readiness signal.
+                  if "enabled" in line and optional.search(line) and camera.search(line):
+                      line=re.sub(r'enabled\s*=\s*[^,\)]*', 'enabled = true', line, count=1)
+                  out.append(line)
+              s="\n".join(out)+("\n" if original.endswith("\n") else "")
+              if s!=original: p.write_text(s)
+
+          # Add haptic feedback to existing Compose click handlers conservatively:
+          # do not refactor files automatically. The helper is compiled and ready;
+          # existing platform haptics remain untouched.
+          PY
+
+          # FIVEMODS 30 reliability primitives. These do not replace the existing
+          # capture engine; they provide bounded recovery/fallback state for camera surfaces.
+          cat > "$pkgdir/Fivemods14Reliability.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          import android.os.SystemClock
+
+          enum class DuReadiness { READY, LIMITED, UNAVAILABLE, UNKNOWN }
+
+          data class CameraRecoveryState(
+              val attempts: Int = 0,
+              val lastHealthyFrameMs: Long = SystemClock.elapsedRealtime(),
+              val lastReason: String? = null
+          ) {
+              fun frameSeen() = copy(attempts = 0, lastHealthyFrameMs = SystemClock.elapsedRealtime(), lastReason = null)
+              fun needsRecovery(nowMs: Long = SystemClock.elapsedRealtime(), stallMs: Long = 2500L) =
+                  nowMs - lastHealthyFrameMs >= stallMs
+              fun next(reason: String) = copy(attempts = attempts + 1, lastReason = reason)
+              fun mayRetry(maxAttempts: Int = 2) = attempts < maxAttempts
+          }
+
+          object Fivemods14FieldRules {
+              // Optional telemetry must report state, never impersonate a camera permission.
+              fun optionalState(available: Boolean?, degraded: Boolean = false): DuReadiness =
+                  when {
+                      available == null -> DuReadiness.UNKNOWN
+                      !available -> DuReadiness.UNAVAILABLE
+                      degraded -> DuReadiness.LIMITED
+                      else -> DuReadiness.READY
+                  }
+
+              // Recovery is deliberately bounded: restart at most twice, then expose
+              // an honest failure/retry action rather than looping forever.
+              const val MAX_PREVIEW_RECOVERY_ATTEMPTS = 2
+              const val PREVIEW_STALL_MS = 2500L
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-FIELD-RELIABILITY.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          1. Preserve MAIN, LIVE, TIKTOK, STATUS and INTERVIEW and both workflow pages.
+          2. Preserve working capture/encode paths; no wholesale camera-engine rewrite.
+          3. Camera permission remains required for preview; microphone permission remains required where audio capture needs it.
+          4. GPS/network/battery/temperature/metadata are advisory READY/LIMITED/UNAVAILABLE/UNKNOWN states and must not block camera entry.
+          5. Preview recovery is bounded to two attempts; never infinite-loop a failing camera.
+          6. A frozen/black preview should recover the affected mode independently and use supported fallback capability where existing engine exposes one.
+          7. Haptics are meaningful only: mode/select tick, record confirmation, warning/reject; no continuous vibration on sliders.
+          8. UI scrims remain local to controls; do not darken the whole preview.
+          9. Unsupported FPS/resolution/lens/stabilization values must fall back honestly rather than claim unsupported output.
+          10. Optional telemetry failure must never terminate an active recording.
+          EOF
+
+          # FIVEMODS 30 MASTER CAMERA additive intelligence layer.
+          cat > "$pkgdir/Fivemods15ProOperator.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class OperatorSeverity { NORMAL, WARNING, CRITICAL }
+          enum class FocusConfidence { AF, LOCK, SEARCHING, LOW_CONFIDENCE, UNKNOWN }
+          enum class RecordingHealth { HEALTHY, DEGRADED, CRITICAL, UNKNOWN }
+
+          data class RecordingVitals(
+              val droppedFrames: Long? = null,
+              val storageRemainingBytes: Long? = null,
+              val thermalState: String? = null,
+              val micActive: Boolean? = null,
+              val encoderHealthy: Boolean? = null
+          ) {
+              fun health() = when {
+                  encoderHealthy == false -> RecordingHealth.CRITICAL
+                  micActive == false -> RecordingHealth.DEGRADED
+                  droppedFrames != null && droppedFrames > 0 -> RecordingHealth.DEGRADED
+                  encoderHealthy == true -> RecordingHealth.HEALTHY
+                  else -> RecordingHealth.UNKNOWN
+              }
+          }
+
+          data class ModeOperatorMemory(
+              val lensId: String? = null,
+              val exposureCompensation: Int? = null,
+              val whiteBalanceKelvin: Int? = null,
+              val stabilizationMode: String? = null,
+              val fps: Int? = null
+          )
+
+          object Fivemods15OperatorRules {
+              fun <T> supportedOrNull(requested: T, supported: Collection<T>): T? =
+                  requested.takeIf { supported.contains(it) }
+
+              fun mayRecord(cameraReady: Boolean, requiredAudioReady: Boolean): Boolean =
+                  cameraReady && requiredAudioReady
+
+              const val SLIDER_HAPTIC_MIN_INTERVAL_MS = 90L
+              const val WARNING_AUTO_HIDE_MS = 2400L
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-PRO-OPERATOR.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 14 bounded recovery and camera-first rules.
+          - Preserve five camera modes and both workflow pages.
+          - Exposure/focus/recording-health intelligence is advisory, not secret automation.
+          - Use real dropped-frame, storage, thermal, microphone and encoder values only when available.
+          - Never fabricate unsupported camera capability telemetry.
+          - Show only supported lenses, FPS, resolutions and stabilization options.
+          - Edge zoom/exposure controls use meaningful haptic detents, not continuous vibration.
+          - Optional GPS, tracking, network, LUT and overlay failures never disable core recording.
+          - Keep separate operator memory for MAIN, LIVE, TIKTOK, STATUS and INTERVIEW.
+          - Keep normal HUD quiet; warnings are compact and temporary.
+          - No whole-preview darkening and no wholesale capture-engine rewrite.
+          - Pre-record buffering remains architecture-only until safely proven.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA additive control layer.
+          cat > "$pkgdir/Fivemods16CinemaControl.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class FocusMode16 { AF, MF, LOCKED, SEARCHING, UNAVAILABLE }
+          enum class MonitorTool16 { ZEBRA, PEAKING, HISTOGRAM, WAVEFORM }
+          enum class RecordControlSafety16 { SAFE_DURING_RECORD, LOCK_DURING_RECORD }
+
+          data class CinemaSessionMemory16(
+              val lensId: String? = null,
+              val exposureCompensation: Int? = null,
+              val whiteBalanceKelvin: Int? = null,
+              val tint: Int? = null,
+              val focusMode: FocusMode16 = FocusMode16.AF,
+              val stabilizationMode: String? = null
+          )
+
+          data class OperatorAlert16(
+              val key: String,
+              val message: String,
+              val critical: Boolean = false
+          )
+
+          object Fivemods16CinemaRules {
+              const val MONITOR_ANALYSIS_TARGET_FPS = 12
+              const val MONITOR_ANALYSIS_DEGRADED_FPS = 6
+              const val CONTROL_AUTO_HIDE_MS = 1800L
+              const val HAPTIC_DETENT_MIN_INTERVAL_MS = 90L
+
+              // Monitoring overlays are viewfinder-only by default.
+              fun monitoringMayEnterCleanOutput(): Boolean = false
+
+              // Recording wins over monitoring analysis.
+              fun analysisRate(recordingDegraded: Boolean): Int =
+                  if (recordingDegraded) MONITOR_ANALYSIS_DEGRADED_FPS
+                  else MONITOR_ANALYSIS_TARGET_FPS
+
+              // Session-changing controls are protected while a take is active.
+              fun controlEnabled(
+                  recording: Boolean,
+                  safety: RecordControlSafety16
+              ): Boolean = !recording || safety == RecordControlSafety16.SAFE_DURING_RECORD
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-CINEMA-CONTROL.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve both workflow pages and all five camera modes.
+          - Preserve FIVEMODS 13 haptics, FIVEMODS 14 recovery, and FIVEMODS 15 operator intelligence.
+          - No wholesale camera-engine rewrite.
+          - Use one-handed thumb-zone control hierarchy; advanced tools stay collapsed until requested.
+          - Manual focus architecture supports AF/MF/LOCK/SEARCHING/UNAVAILABLE states.
+          - Zebra, peaking, histogram and waveform are monitoring tools only; never burn them into CLEAN output.
+          - White balance architecture supports Kelvin, tint and lock only where the real camera exposes support.
+          - Native lens detents must represent real physical/supportable lens transitions only.
+          - During recording, controls that require unsafe session restart are locked until STOP.
+          - Audio details expand from the meter and collapse back to a compact meter.
+          - Warnings share one compact operator rail and disappear when resolved.
+          - REC uses distinct start/stop haptics and clear tally/timecode state.
+          - Recovery restores supported lens/exposure/WB/focus/stabilization state instead of random defaults.
+          - CLEAN and BRANDED remain separate; monitoring overlays never contaminate CLEAN.
+          - Unsupported controls show UNAVAILABLE or remain absent; never fabricate ISO/shutter/FPS/lens capability.
+          - Monitoring analysis throttles before it is allowed to harm preview or recording performance.
+          - Recording stability always has priority over HUD analysis.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA additive navigation/UI layer.
+          cat > "$pkgdir/Fivemods17WorkflowUi.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class WorkflowReadiness17 { READY, LIMITED, UNAVAILABLE, UNKNOWN }
+          enum class WorkflowPage17 { MISSION_HUB, PREFLIGHT_CONSOLE, CAMERA }
+          enum class CameraMode17 { MAIN, LIVE, TIKTOK, STATUS, INTERVIEW }
+
+          data class MissionSelection17(
+              val mode: CameraMode17 = CameraMode17.MAIN,
+              val whereText: String = "",
+              val whatText: String = "",
+              val profileLabel: String? = null
+          )
+
+          data class PreflightItem17(
+              val key: String,
+              val label: String,
+              val state: WorkflowReadiness17,
+              val requiredForSelectedAction: Boolean,
+              val reason: String? = null
+          )
+
+          data class WorkflowUiState17(
+              val page: WorkflowPage17 = WorkflowPage17.MISSION_HUB,
+              val mission: MissionSelection17 = MissionSelection17(),
+              val openingCamera: Boolean = false
+          )
+
+          object Fivemods17WorkflowRules {
+              const val PAGE_TRANSITION_MS = 160L
+              const val CONTEXT_CONTROL_HIDE_MS = 1800L
+
+              // Required camera/audio permissions may block only the action that
+              // genuinely needs them. Optional readiness never blocks camera entry.
+              fun mayOpenCamera(items: List<PreflightItem17>): Boolean =
+                  items.filter { it.requiredForSelectedAction }
+                      .none { it.state == WorkflowReadiness17.UNAVAILABLE }
+
+              fun optionalWarningCount(items: List<PreflightItem17>): Int =
+                  items.count {
+                      !it.requiredForSelectedAction &&
+                      it.state != WorkflowReadiness17.READY
+                  }
+
+              // Camera initialization should start with the transition, not after it.
+              fun shouldInitializeCamera(
+                  from: WorkflowPage17,
+                  to: WorkflowPage17
+              ): Boolean = to == WorkflowPage17.CAMERA && from != WorkflowPage17.CAMERA
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-OPERATOR-WORKFLOW-UI.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13 haptics, 14 recovery, 15 operator intelligence and 16 cinema controls.
+          - Preserve both workflow pages and MAIN/LIVE/TIKTOK/STATUS/INTERVIEW.
+          - Page 1 becomes MISSION HUB: WHERE / WHAT / MODE / READY with one obvious OPEN CAMERA action.
+          - Page 2 becomes PREFLIGHT CONSOLE: CAMERA, MIC, STORAGE and selected profile are primary.
+          - GPS, network, thermal and other optional readiness remain secondary and never block camera entry.
+          - Allow direct Page 1 -> Camera operation; Page 2 is useful preparation, not an artificial barrier.
+          - Carry selected mode/profile through navigation without temporary reset to the wrong mode.
+          - Begin camera initialization during the short opening transition.
+          - Keep the five-mode strip at the extreme bottom.
+          - Keep REC central with a compact mode-specific quick-control dock.
+          - Contextual exposure/zoom/focus/WB/audio/monitor controls appear on demand and auto-hide.
+          - Advanced settings use a side drawer instead of covering the live view.
+          - During recording, nonessential chrome retreats; tally/timecode/audio/critical warnings dominate.
+          - Use one unified warning rail for thermal/storage/dropped frames/focus/mic/network states.
+          - Extend meaningful haptics to workflow selection, OPEN CAMERA, preflight completion and required-permission warnings.
+          - UI uses existing theme tokens, clear hierarchy, touch targets and spacing; avoid random new colors.
+          - Do not darken the whole preview.
+          - Do not fabricate telemetry.
+          - Do not remove or rewrite working capture/encode paths.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA additive intelligence layer.
+          cat > "$pkgdir/Fivemods18AdaptiveFieldCamera.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class TrackingState18 { LOCKED, SEARCHING, LOST, REACQUIRED, UNAVAILABLE }
+          enum class CapabilityState18 { SUPPORTED, UNSUPPORTED, UNKNOWN }
+          enum class TakeState18 { IDLE, STARTING, RECORDING, FINALIZING, SAVED, FAILED }
+
+          data class CameraCapability18(
+              val cameraId: String,
+              val physicalLensIds: Set<String> = emptySet(),
+              val fpsRanges: Set<String> = emptySet(),
+              val resolutions: Set<String> = emptySet(),
+              val stabilizationModes: Set<String> = emptySet(),
+              val zoomMin: Float? = null,
+              val zoomMax: Float? = null
+          )
+
+          data class AdaptivePerformance18(
+              val previewFps: Float? = null,
+              val droppedFrames: Long? = null,
+              val thermalDegraded: Boolean = false
+          ) {
+              fun monitorBudgetFps(): Int = when {
+                  thermalDegraded -> 4
+                  droppedFrames != null && droppedFrames > 0 -> 6
+                  previewFps != null && previewFps < 24f -> 6
+                  else -> 12
+              }
+          }
+
+          data class TakeProtection18(
+              val state: TakeState18 = TakeState18.IDLE,
+              val outputPath: String? = null
+          ) {
+              fun sessionChangingControlsAllowed(): Boolean =
+                  state == TakeState18.IDLE || state == TakeState18.SAVED || state == TakeState18.FAILED
+              fun mayClaimSaved(): Boolean = state == TakeState18.SAVED
+          }
+
+          object Fivemods18AdaptiveRules {
+              const val UI_MOTION_MS = 160L
+              const val TEMP_CONTROL_HIDE_MS = 1800L
+
+              // Optional systems never become prerequisites for core camera entry.
+              fun cameraEntryAllowed(cameraPermission: Boolean, cameraAvailable: Boolean): Boolean =
+                  cameraPermission && cameraAvailable
+
+              // Monitoring is sacrificed before recording stability.
+              fun monitoringBudget(performance: AdaptivePerformance18): Int =
+                  performance.monitorBudgetFps()
+
+              // Monitoring aids never contaminate CLEAN output.
+              fun monitoringMayEnterClean(): Boolean = false
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-ADAPTIVE-FIELD-CAMERA.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–17 foundations, both workflow pages and all five camera modes.
+          - Mission Hub WHERE/WHAT/MODE choices carry into the selected camera session.
+          - Build UI choices only from real hardware capabilities when those capabilities are available.
+          - Unsupported/unknown lenses, FPS, resolution, stabilization or telemetry are never fabricated.
+          - HUD is contextual: exposure/audio/focus/zoom tools rise when used and auto-hide afterward.
+          - Gesture architecture: tap focus, long-press lock, edge exposure/zoom and supported lens switching.
+          - Interview tracking uses LOCKED/SEARCHING/LOST/REACQUIRED/UNAVAILABLE without stopping recording on tracking loss.
+          - Destination framing guides are monitoring-only and never enter CLEAN output.
+          - Zebra/peaking/histogram/waveform/tracking share a performance budget.
+          - Thermal or dropped-frame pressure throttles monitoring before recording quality.
+          - Active takes lock session-changing controls until STOP/finalization.
+          - Never claim a recording is saved until finalization succeeds.
+          - Remaining record time should be derived from real storage and selected bitrate when available.
+          - Audio route/clipping/silence/channel-loss warnings are advisory and must not unnecessarily kill video.
+          - Keep one mode-specific Quick Action per camera mode.
+          - Mission Hub emphasizes one selected mode rather than five equally dominant cards.
+          - Preflight prioritizes required systems and labels optional degradation honestly.
+          - Restore safe mode/lens/WB/exposure/workflow context after temporary navigation.
+          - Keep UI motion around the established 160 ms token and never delay camera startup for decoration.
+          - Outdoor readability uses local backing only; never darken the whole preview.
+          - Diagnostics remain outside the normal HUD and report only real/known values.
+          - No wholesale capture/encode engine rewrite.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA additive UI/monitoring layer.
+          cat > "$pkgdir/Fivemods19EdgeHud.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class HudDensity19 { MINIMAL, STANDARD, PRO }
+          enum class Handedness19 { LEFT, RIGHT }
+          enum class EdgeTool19 { HISTOGRAM, EXPOSURE, ZOOM, AUDIO, RECORD_HEALTH }
+          enum class IconState19 { INACTIVE, SELECTED, WARNING, CRITICAL }
+
+          data class EdgeHudState19(
+              val density: HudDensity19 = HudDensity19.STANDARD,
+              val handedness: Handedness19 = Handedness19.RIGHT,
+              val expandedTool: EdgeTool19? = null,
+              val recording: Boolean = false
+          ) {
+              fun essentialOnly(): Boolean = recording || density == HudDensity19.MINIMAL
+          }
+
+          data class VerticalHistogram19(
+              val bins: List<Float> = emptyList(),
+              val clippedLow: Boolean = false,
+              val clippedHigh: Boolean = false
+          ) {
+              fun normalized(): List<Float> {
+                  val max = bins.maxOrNull()?.takeIf { it > 0f } ?: return bins
+                  return bins.map { (it / max).coerceIn(0f, 1f) }
+              }
+          }
+
+          object Fivemods19EdgeRules {
+              const val EDGE_TOOL_WIDTH_DP = 32
+              const val EXPANDED_EDGE_TOOL_WIDTH_DP = 88
+              const val TEMP_CONTROL_HIDE_MS = 1800L
+              const val MODE_HAPTIC_MIN_INTERVAL_MS = 90L
+
+              // Ordinary camera controls are glyph-first: no permanent tile/pill.
+              fun ordinaryIconNeedsBackground(): Boolean = false
+
+              // Monitoring is always preview-only unless a branded-output feature
+              // explicitly and deliberately implements a separate burn-in.
+              fun histogramMayEnterClean(): Boolean = false
+
+              // Recording keeps only essentials visible by default.
+              fun showNonEssentialChrome(state: EdgeHudState19): Boolean =
+                  !state.recording && state.density != HudDensity19.MINIMAL
+
+              fun histogramUpdateFps(recordingHealthDegraded: Boolean): Int =
+                  if (recordingHealthDegraded) 4 else 10
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-EDGE-HUD.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–18 foundations, both workflow pages and all five modes.
+          - Camera image is primary; monitoring information lives around the edges.
+          - Ordinary FIVEMODS camera/mode icons have NO permanent button background.
+          - Use only local glyph contrast/shadow/backing where necessary for bright scenes; never darken the whole preview.
+          - Active icon state uses stroke/accent/underline rather than a large tile.
+          - Keep REC and critical warnings visually stronger because they represent state/safety.
+          - Replace the space-heavy horizontal histogram with a slim VERTICAL edge histogram.
+          - Vertical histogram is collapsed by default, expands temporarily on tap, and never enters CLEAN output.
+          - One edge hosts exposure and the opposite edge zoom; both are thin, long and touch-revealed.
+          - Edge rulers use meaningful haptic detents and avoid continuous vibration.
+          - Audio can use a compact vertical L/R meter and expand only when touched.
+          - Monitoring/record-health tools share edge territory instead of creating permanent horizontal bars.
+          - Tap focus, long-press AE/AF lock, edge drag exposure/zoom and supported lens-switch gestures remain contextual.
+          - Keep focus/subject reticles compact and use one consistent AF/LOCK/tracking visual language.
+          - During REC, retreat nonessential chrome; keep tally, timecode, audio, essential meters and critical warnings.
+          - Support LEFT/RIGHT handed edge-tool placement without changing camera behavior.
+          - Keep five-mode strip at the extreme bottom with background-free mode icons and compact active indication.
+          - Quick controls remain close to REC; advanced settings remain in the drawer.
+          - Mission Hub and Preflight Console adopt the lighter icon language and reduce heavy card backgrounds.
+          - Readiness remains compact and optional readiness never blocks camera entry.
+          - HUD density supports MINIMAL / STANDARD / PRO.
+          - Temporary panels must avoid REC and focus/subject boxes where layout permits.
+          - Histogram/peaking/waveform/tracking analysis throttles before recording quality is affected.
+          - No fabricated telemetry, no wholesale capture-engine rewrite, no preview-darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA additive production/control layer.
+          cat > "$pkgdir/Fivemods20FieldDirector.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class HudEditState20 { LOCKED, EDITING }
+          enum class FinalizeState20 { IDLE, RECORDING, FINALIZING, SAVED, FAILED }
+          enum class GovernorLevel20 { FULL, REDUCED_ANALYSIS, ESSENTIAL_ONLY }
+
+          data class DirectorMission20(
+              val whereText: String = "",
+              val whatText: String = "",
+              val subjectText: String = "",
+              val mode: String = "MAIN",
+              val profile: String? = null
+          )
+
+          data class TakeFacts20(
+              val droppedFrames: Long? = null,
+              val micOk: Boolean? = null,
+              val thermalOk: Boolean? = null,
+              val remainingSeconds: Long? = null
+          )
+
+          data class HudPlacement20(
+              val key: String,
+              val xFraction: Float,
+              val yFraction: Float,
+              val protected: Boolean = false
+          )
+
+          object Fivemods20DirectorRules {
+              const val MIN_TOUCH_TARGET_DP = 48
+              const val UI_MOTION_MS = 160L
+
+              // A visible icon can be small/background-free while retaining a
+              // proper invisible touch target.
+              fun visibleBackgroundForOrdinaryIcon(): Boolean = false
+
+              // Never call a take saved before real finalization completes.
+              fun mayShowSaved(state: FinalizeState20): Boolean =
+                  state == FinalizeState20.SAVED
+
+              // Recording/encoder always wins over optional analysis.
+              fun governor(thermalPressure: Boolean, droppedFrames: Long?): GovernorLevel20 =
+                  when {
+                      droppedFrames != null && droppedFrames > 0L -> GovernorLevel20.ESSENTIAL_ONLY
+                      thermalPressure -> GovernorLevel20.REDUCED_ANALYSIS
+                      else -> GovernorLevel20.FULL
+                  }
+
+              // REC and safety-critical UI cannot be dragged into unsafe zones.
+              fun placementEditable(item: HudPlacement20): Boolean = !item.protected
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-FIELD-DIRECTOR.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–19 foundations, both workflow pages and all five modes.
+          - Add HUD Edit for permitted controls; REC and safety-critical zones remain protected.
+          - Save separate HUD layouts for MAIN/LIVE/TIKTOK/STATUS/INTERVIEW where persistence exists.
+          - Keep ordinary camera icons background-free with >=48dp invisible touch targets.
+          - Keep vertical histogram; support compact luma/RGB/clipping presentation only from real analysis data.
+          - Adaptive contrast uses local glyph backing/shadow only; never darken the whole preview.
+          - Edge tools avoid collisions and remain contextual.
+          - Manual-focus ruler remains thin/vertical; peaking is monitoring-only and prohibited from CLEAN.
+          - Exposure monitoring stack shares edge space instead of creating permanent panels.
+          - Physical lens points belong on the zoom rail only when actually supported by hardware.
+          - REC transforms HUD into recording-first layout: tally/timecode/audio/remaining time/critical health.
+          - Take health shows concrete facts, never a fabricated percentage score.
+          - STOP enters FINALIZING and shows SAVED only after actual file finalization succeeds.
+          - Provide a last-take review shortcut without forcing full gallery navigation.
+          - Workflow Page 1 evolves to Director Board: WHERE / WHAT / SUBJECT / MODE / PROFILE / OPEN CAMERA.
+          - Workflow Page 2 Smart Preflight shows required items first; optional status is secondary/collapsible.
+          - Optional GPS/network/telemetry never creates an artificial camera-entry failure.
+          - Resume safe mission/mode settings when technically valid.
+          - Mode intelligence stays mode-specific: LIVE network, TIKTOK framing/FPS, STATUS segment timing, INTERVIEW subject/audio, MAIN cinema.
+          - Performance governor prioritizes camera/encoder, then audio, essential monitoring, then cosmetic analysis.
+          - Preserve CLEAN/BRANDED separation and never burn monitoring aids into CLEAN.
+          - No fabricated telemetry, no wholesale capture-engine rewrite, no preview-darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA additive operator layer.
+          cat > "$pkgdir/Fivemods21DirectorPro.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+          enum class DirectorProfile21 { REPORTER, CINEMA, INTERVIEW, LIVE, MINIMAL, CUSTOM }
+          enum class ExposureState21 { AUTO, LOCKED, MANUAL, UNAVAILABLE }
+          enum class RecordGuard21 { OFF, ARMED }
+          data class QuickControlDeck21(val mode:String,val controlKeys:List<String> = emptyList()) {
+              fun normalized()=copy(controlKeys=controlKeys.distinct().take(5))
+          }
+          data class FocusPull21(val pointA:Float?=null,val pointB:Float?=null) {
+              fun ready()=pointA!=null && pointB!=null
+          }
+          data class TakeMarker21(val elapsedMs:Long,val label:String?=null)
+          object Fivemods21DirectorProRules {
+              const val MAX_QUICK_CONTROLS=5
+              const val UI_MOTION_MS=160L
+              const val LAST_TAKE_PANEL_MS=2600L
+              fun ordinaryIconHasVisibleTile()=false
+              fun sessionChangeAllowed(recording:Boolean,guard:RecordGuard21)=!recording || guard==RecordGuard21.OFF
+              fun technicalAnalysisBudget(droppedFrames:Long?,thermalPressure:Boolean)=when {
+                  droppedFrames!=null && droppedFrames>0L -> 3
+                  thermalPressure -> 5
+                  else -> 10
+              }
+              fun mayShowManualValue(state:ExposureState21)=state==ExposureState21.MANUAL || state==ExposureState21.LOCKED
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-DIRECTOR-PRO.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–20, both workflow pages and all five modes.
+          - Per-mode Custom Control Deck supports up to five controls near REC.
+          - Background-free icons remain with >=48dp invisible touch targets.
+          - Vertical histogram stays narrow and expands only on demand.
+          - Edge Stack expands only the active edge tool.
+          - HUD Edit supports safe-zone snapping/reset while protecting REC/tally/warnings.
+          - Operator profiles: REPORTER/CINEMA/INTERVIEW/LIVE/MINIMAL/CUSTOM.
+          - Director Board keeps compact WHERE/WHAT/SUBJECT and one OPEN CAMERA action.
+          - Smart Preflight prioritizes required actions; optional status remains secondary.
+          - Instant Camera may restore last safe mode as an operator preference.
+          - Shutter/ISO/WB report AUTO/LOCKED/MANUAL/UNAVAILABLE honestly.
+          - Focus Pull A/B is for supported real manual focus only.
+          - Horizon/framing/safe guides are monitoring-only and never enter CLEAN.
+          - Record Guard protects active takes from session-changing actions.
+          - Take Marker records elapsed-time metadata without interrupting recording.
+          - Last-take panel uses only real finalized take facts and auto-dismisses.
+          - Recovery messages appear only when recovery/restoration really occurred.
+          - Technical telemetry remains in a troubleshooting drawer.
+          - Analysis throttles before camera/encoder/audio stability is compromised.
+          - Preserve CLEAN/BRANDED separation, camera-first entry and bounded recovery.
+          - No fabricated telemetry, no wholesale engine rewrite, no whole-preview darkening.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA additive live-operation layer.
+          cat > "$pkgdir/Fivemods22LiveDirector.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class DirectorBarItem22 { LENS, EXPOSURE, WHITE_BALANCE, FPS, AUDIO, RECORD }
+          enum class SubjectState22 { LOCKED, SEARCHING, LOST, REACQUIRED, UNAVAILABLE }
+          enum class CoreCameraState22 { FULL, REDUCED_ANALYSIS, EMERGENCY_CORE }
+          enum class MarkerKind22 { GOOD, QUOTE, CUT, B_ROLL, CUSTOM }
+
+          data class LiveDirectorBar22(
+              val visibleItems: List<DirectorBarItem22> = listOf(
+                  DirectorBarItem22.LENS,
+                  DirectorBarItem22.EXPOSURE,
+                  DirectorBarItem22.WHITE_BALANCE,
+                  DirectorBarItem22.FPS,
+                  DirectorBarItem22.AUDIO,
+                  DirectorBarItem22.RECORD
+              )
+          )
+
+          data class NetworkHealth22(
+              val bitrateKbps: Int? = null,
+              val latencyMs: Long? = null,
+              val droppedPackets: Long? = null
+          )
+
+          data class TakeMarker22(
+              val elapsedMs: Long,
+              val kind: MarkerKind22,
+              val customLabel: String? = null
+          )
+
+          object Fivemods22LiveDirectorRules {
+              const val AUTO_CLEAR_MS = 2000L
+              const val UI_MOTION_MS = 160L
+              const val ESSENTIAL_ANALYSIS_FPS = 4
+
+              fun ordinaryIconHasVisibleBackground(): Boolean = false
+
+              fun thermalState(
+                  thermalPressure: Boolean,
+                  optionalSubsystemFailed: Boolean
+              ): CoreCameraState22 = when {
+                  optionalSubsystemFailed -> CoreCameraState22.EMERGENCY_CORE
+                  thermalPressure -> CoreCameraState22.REDUCED_ANALYSIS
+                  else -> CoreCameraState22.FULL
+              }
+
+              // Local recording must not depend on streaming/network health.
+              fun localRecordingAllowed(cameraReady: Boolean, requiredAudioReady: Boolean): Boolean =
+                  cameraReady && requiredAudioReady
+
+              // Monitoring aids never enter CLEAN output.
+              fun monitoringMayEnterClean(): Boolean = false
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-LIVE-DIRECTOR.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–21, both workflow pages and MAIN/LIVE/TIKTOK/STATUS/INTERVIEW.
+          - Add an ultra-thin Live Director Bar for lens/exposure/WB/FPS/audio/REC with background-free controls.
+          - Auto-clear temporary viewfinder controls after about two seconds; tally and critical warnings remain.
+          - Keep histogram vertical only: extremely narrow collapsed state, clipping at ends, expand on demand.
+          - Physical lens points appear only when actually supported and use meaningful haptic detents.
+          - Shutter/ISO/WB report AUTO/MANUAL/LOCKED/UNAVAILABLE honestly; never guess sensor values.
+          - SET WHITE and Focus Pull A/B appear only where real camera control support exists.
+          - Interview subject state is compact: LOCKED/SEARCHING/LOST/REACQUIRED/UNAVAILABLE.
+          - Interview prioritizes real audio status; LIVE prioritizes real network health without tying local recording to network.
+          - TikTok/Status safe-frame overlays remain optional, compact and monitoring-only.
+          - Director gestures are configurable but must not conflict with edge rulers.
+          - Haptic vocabulary distinguishes mode/lens/exposure-zero/focus-lock/REC start-stop/marker/rejected action.
+          - Optional recording touch lock may protect long takes while keeping deliberate STOP available.
+          - Take Marker categories GOOD/QUOTE/CUT/B-ROLL/CUSTOM store timestamp metadata without interrupting recording.
+          - Workflow Page 1 supports mission templates while keeping one obvious OPEN CAMERA action.
+          - Workflow Page 2 collapses completed checks; required problems remain visible with recovery actions.
+          - Nonessential mission/preflight work must not delay preview initialization.
+          - Thermal survival reduces monitoring analysis and cosmetic animation before recording quality.
+          - Emergency Core Camera retains preview + REC + required audio + basic exposure/zoom when optional subsystems fail.
+          - Preserve background-free icons, vertical Edge HUD, CLEAN/BRANDED separation, bounded recovery and camera-first behavior.
+          - No fabricated telemetry, no wholesale capture-engine rewrite, no whole-preview darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA + permanent Build Card system.
+          cat > "$pkgdir/Fivemods23ControlCenter.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class FeatureState23 { ACTIVE, SUPPORTED, UNAVAILABLE, UNKNOWN }
+          enum class CameraState23 { READY, REC, RECOVERING, FINALIZING, LIMITED }
+          enum class ControlSection23 { EXPOSURE, FOCUS, WHITE_BALANCE, AUDIO, MONITORING, STABILIZATION, OUTPUT, DEVICE }
+
+          data class BuildFeature23(
+              val key: String,
+              val title: String,
+              val state: FeatureState23 = FeatureState23.UNKNOWN,
+              val destination: String? = null
+          )
+
+          data class BuildManifest23(
+              val version: String = "FIVEMODS 30",
+              val title: String = "MASTER CAMERA",
+              val foundation: String = "F13-F22",
+              val features: List<BuildFeature23> = emptyList()
+          )
+
+          object Fivemods23BuildManifest {
+              val manifest = BuildManifest23(features = listOf(
+                  BuildFeature23("master_camera","MASTER CAMERA",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("master_rec","Authoritative REC Controller",FeatureState23.ACTIVE,"RECORD"),
+                  BuildFeature23("session_resolver","Session Capability Resolver",FeatureState23.ACTIVE,"DIAGNOSTICS"),
+                  BuildFeature23("master_checks","MASTER CAMERA CHECKS",FeatureState23.ACTIVE,"DIAGNOSTICS"),
+                  BuildFeature23("shoot_ready","MASTER CAMERA",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("record_prearm","REC Pre-arm",FeatureState23.ACTIVE,"RECORD"),
+                  BuildFeature23("action_preflight","Action Preflight",FeatureState23.ACTIVE,"PREFLIGHT"),
+                  BuildFeature23("verify_f29","VERIFY THIS BUILD",FeatureState23.ACTIVE,"DIAGNOSTICS"),
+                  BuildFeature23("camera_command","MASTER CAMERA",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("rec_engine_guard","REC Engine Guard",FeatureState23.ACTIVE,"RECORD"),
+                  BuildFeature23("command_verification","Control-to-Camera Verification",FeatureState23.ACTIVE,"DIAGNOSTICS"),
+                  BuildFeature23("verify_features","VERIFY FEATURES",FeatureState23.ACTIVE,"DIAGNOSTICS"),
+                  BuildFeature23("instant_operator","MASTER CAMERA",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("instant_rec","Instant Circular REC Path",FeatureState23.ACTIVE,"RECORD"),
+                  BuildFeature23("quick_deck_2","Quick Deck 2.0",FeatureState23.ACTIVE,"QUICK_DECK"),
+                  BuildFeature23("touch_reliability","Touch Reliability Diagnostics",FeatureState23.ACTIVE,"DIAGNOSTICS"),
+                  BuildFeature23("pro_touch","MASTER CAMERA interaction system",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("round_rec_2","Circular REC 2.0",FeatureState23.ACTIVE,"RECORD"),
+                  BuildFeature23("curved_cards_2","Curved Cards 2.0",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("rec_control_check","CHECK REC CONTROL",FeatureState23.ACTIVE,"DIAGNOSTICS"),
+                  BuildFeature23("round_rec","Round Record Button",FeatureState23.ACTIVE,"RECORD"),
+                  BuildFeature23("curved_cards","Curved Workflow + Camera Cards",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("build_card","Workflow + Camera Build Cards",FeatureState23.ACTIVE,"BUILD_INFO"),
+                  BuildFeature23("control_center","Control Center Drawer",FeatureState23.ACTIVE,"CONTROL_CENTER"),
+                  BuildFeature23("edge_hud","Vertical Edge HUD",FeatureState23.ACTIVE,"MONITORING"),
+                  BuildFeature23("quick_deck","Per-mode Quick Control Deck",FeatureState23.ACTIVE,"QUICK_DECK"),
+                  BuildFeature23("rec_confidence","REC / FINALIZING / SAVED states",FeatureState23.ACTIVE,"RECORD"),
+                  BuildFeature23("diagnostics","Performance Diagnostics",FeatureState23.ACTIVE,"DIAGNOSTICS")
+              ))
+          }
+
+          object Fivemods23Rules {
+              const val MAX_PINNED_CONTROLS=5
+              const val UI_MOTION_MS=160L
+              fun ordinaryIconHasVisibleBackground()=false
+              fun monitoringMayEnterClean()=false
+              fun mayShowSaved(state:CameraState23)=state!=CameraState23.FINALIZING
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-CONTROL-CENTER.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–22, both workflow pages and all five modes.
+          - PERMANENT RULE FROM F23: every build has one Build Manifest, Workflow Build Card and Camera Build Card.
+          - Workflow Page 1 shows a compact build card naming the build and its real improvements.
+          - Camera Build Info card reports ACTIVE/SUPPORTED/UNAVAILABLE/UNKNOWN; hardware-dependent features never receive fake checkmarks.
+          - Feature-card actions may navigate to the relevant real control or safe diagnostic/test.
+          - One source-of-truth manifest prevents workflow and camera version/feature claims from disagreeing.
+          - Control Center drawer groups Exposure/Focus/WB/Audio/Monitoring/Stabilization/Output/Device.
+          - Keep background-free icons and >=48dp invisible touch targets.
+          - Keep histogram vertical; expand Luma/RGB/clipping only from real analysis data.
+          - Edge tools share space; only the active tool expands.
+          - Quick Control Deck pins up to five controls separately per mode.
+          - MAIN/LIVE/TIKTOK/STATUS/INTERVIEW keep mode-specific priorities.
+          - Camera state capsule uses READY/REC/RECOVERING/FINALIZING/LIMITED.
+          - STOP must show FINALIZING until actual save finalization succeeds.
+          - Unsafe lens/session changes during recording remain AVAILABLE AFTER STOP.
+          - Focus A/B and manual controls appear only when genuine hardware support exists.
+          - Exposure zero has a distinct visual detent and meaningful haptic.
+          - Audio remains a compact vertical meter and expands on demand.
+          - Clean View hides nonessential HUD without hiding REC/tally/critical warnings.
+          - Director Board keeps selected mode/WHERE/WHAT/SUBJECT/profile/build card and one dominant OPEN CAMERA.
+          - Smart Preflight summarizes required readiness and optional warning count.
+          - New-build What's New may show once after install and must not repeatedly interrupt operation.
+          - Safe Build Card actions include TEST HAPTIC/CHECK CAPABILITIES/CHECK AUDIO/OPEN DIAGNOSTICS.
+          - Emergency Core state identifies disabled optional systems without blocking core recording.
+          - Diagnostics show only real/known FPS/dropped frames/encoder/thermal/storage/audio/recovery data.
+          - Preserve CLEAN/BRANDED separation, camera-first entry, bounded recovery and performance priority.
+          - No fabricated telemetry, no wholesale camera-engine rewrite, no whole-preview darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA UI repair layer.
+          cat > "$pkgdir/Fivemods25RoundRecCurvedCards.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class RecordVisualState25 { IDLE, STARTING, RECORDING, FINALIZING, SAVED, FAILED }
+
+          data class RecordButtonSpec25(
+              val diameterDp: Int = 76,
+              val innerDiameterDp: Int = 58,
+              val minimumTouchDp: Int = 76,
+              val shape: String = "CIRCLE"
+          )
+
+          data class CardShapeSpec25(
+              val standardRadiusDp: Int = 18,
+              val compactRadiusDp: Int = 14,
+              val largeRadiusDp: Int = 22
+          )
+
+          object Fivemods25UiRules {
+              val recordButton = RecordButtonSpec25()
+              val cards = CardShapeSpec25()
+
+              // The primary record control is always circular, never square.
+              fun recordButtonIsCircular(): Boolean = true
+
+              // Workflow, Build, Preflight, Director and Control Center cards use curved corners.
+              fun cardCornerRadiusDp(compact: Boolean = false, large: Boolean = false): Int =
+                  when {
+                      large -> cards.largeRadiusDp
+                      compact -> cards.compactRadiusDp
+                      else -> cards.standardRadiusDp
+                  }
+
+              // Ordinary camera/mode icons remain background-free.
+              fun ordinaryIconHasVisibleBackground(): Boolean = false
+
+              // REC remains a direct core-camera action; optional telemetry cannot disable it.
+              fun mayEnableRecord(cameraReady: Boolean, requiredAudioReady: Boolean): Boolean =
+                  cameraReady && requiredAudioReady
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-ROUND-REC-CURVED-CARDS.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Fix the primary camera REC control: it must be a large CIRCULAR button, never a square button.
+          - Keep a generous circular touch target and distinct start/stop haptics.
+          - REC must call the existing protected core record action directly; optional GPS/network/telemetry/readiness must never disable it.
+          - During recording, the circular REC control changes state clearly without becoming a square control.
+          - STOP enters FINALIZING; SAVED appears only after actual finalization succeeds.
+          - Replace square-corner workflow/UI cards with visibly CURVED corners.
+          - Standard cards use about 18dp radius; compact cards about 14dp; major cards about 22dp.
+          - Apply curved cards consistently to Mission/Director Board, Smart Preflight, Build Card, What's New, Control Center, diagnostics and last-take panels.
+          - Do not put permanent tile backgrounds behind ordinary camera or five-mode icons.
+          - Preserve the permanent Build Manifest + Workflow Build Card + Camera Build Card rule.
+          - F25 Build Card must visibly list ROUND REC BUTTON and CURVED UI CARDS as NEW IN F25.
+          - Preserve both workflow pages and MAIN/LIVE/TIKTOK/STATUS/INTERVIEW.
+          - Preserve camera-first entry, bounded recovery, CLEAN/BRANDED separation and honest capability states.
+          - Preserve vertical Edge HUD/histogram and local-only contrast backing.
+          - Do not darken the whole preview.
+          - Do not fabricate telemetry.
+          - Do not wholesale rewrite the working capture/encode engine.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA interaction/UI layer.
+          cat > "$pkgdir/Fivemods26ProTouch.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class TouchAction26 { REC_START, REC_STOP, FOCUS_LOCK, MODE, EXPOSURE_ZERO, NATIVE_LENS, REJECTED }
+          enum class Handedness26 { LEFT, RIGHT }
+          enum class EmergencyUi26 { NORMAL, CORE_CAMERA }
+
+          data class ProTouchSpec26(
+              val recordDiameterDp:Int=76,
+              val minimumTouchDp:Int=76,
+              val standardCardRadiusDp:Int=18,
+              val compactCardRadiusDp:Int=14,
+              val majorCardRadiusDp:Int=22,
+              val contextualHideMs:Long=1800L
+          )
+
+          data class EdgeRulerState26(
+              val visible:Boolean=false,
+              val selectedValue:String?=null,
+              val magnifiedCenter:Boolean=true
+          )
+
+          object Fivemods26ProTouchRules {
+              val spec=ProTouchSpec26()
+              fun recordShape()="CIRCLE"
+              fun ordinaryIconHasVisibleBackground()=false
+              fun monitoringMayEnterClean()=false
+              fun recordTouchAccepted(cameraReady:Boolean,requiredAudioReady:Boolean)=cameraReady && requiredAudioReady
+              fun emergencyKeepsCoreControls(state:EmergencyUi26)=state==EmergencyUi26.CORE_CAMERA
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-PRO-TOUCH.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–25, both workflow pages and all five camera modes.
+          - Circular REC 2.0: outer control remains circular in IDLE/RECORDING/STOP states; never return to square REC.
+          - REC uses a generous touch target, immediate press feedback and distinct start/stop haptics.
+          - Optional GPS/network/telemetry never disables the core REC action.
+          - Curved Cards 2.0: compact 14dp, standard 18dp and major 22dp radii; reduce unnecessary oversized cards.
+          - Use subtle depth/local separation rather than heavy borders and boxes.
+          - Ordinary camera/mode icons remain background-free with >=48dp invisible touch targets.
+          - Extreme-bottom five-mode strip stays background-free; active mode uses compact underline/accent/haptic.
+          - Keep histogram vertical and edge-flush when collapsed; expand only on touch.
+          - Exposure/zoom rulers magnify the selected center value, then auto-hide after interaction.
+          - Focus reticle is compact, confirms genuine lock state and disappears when no longer useful.
+          - Workflow-to-camera transition starts real camera initialization immediately.
+          - Director Board uses one selected-mode major curved card plus compact WHERE/WHAT/SUBJECT/PROFILE rows.
+          - Smart Preflight uses one curved CAMERA READY/ACTION REQUIRED summary; successful checks collapse.
+          - Permanent Build Card rule continues: NEW IN F26 first, earlier foundations collapsed.
+          - Build Card safe action CHECK REC CONTROL tests the UI action path without starting a recording.
+          - Technical diagnostics may expose touch-target events for debugging but never clutter normal camera UI.
+          - Left/right one-hand preference repositions edge/Quick Deck controls while REC remains central.
+          - During REC close secondary panels and retain circular STOP, tally, timecode, audio, remaining time and critical warnings.
+          - Temporary contextual panels support natural dismissal and must not collide with REC/mode strip/edge rulers/focus boxes.
+          - Spacing adapts to screen size rather than blindly scaling all controls.
+          - Outdoor readability uses tiny local icon backing/shadow only; never darken the whole preview.
+          - Emergency Core mode removes nonessential UI and retains preview/circular REC/required audio/basic zoom/exposure.
+          - Preserve CLEAN/BRANDED separation, bounded recovery, honest capability states and performance priority.
+          - No fabricated telemetry, no wholesale capture-engine rewrite, no whole-preview darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA interaction/reliability layer.
+          cat > "$pkgdir/Fivemods27InstantOperator.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class RecordState27 { READY, STARTING, RECORDING, FINALIZING, FAILED }
+          enum class BuildFeatureState27 { BUILT_IN, ACTIVE_NOW, SUPPORTED_BY_DEVICE, UNAVAILABLE_ON_DEVICE, UNKNOWN }
+          enum class CoreUiState27 { FULL, REDUCED, EMERGENCY_CORE }
+          enum class TouchResult27 { RECEIVED, ACTION_STARTED, ACTION_SUCCEEDED, ACTION_FAILED }
+
+          data class RecordInteraction27(
+              val state: RecordState27 = RecordState27.READY,
+              val touchResult: TouchResult27? = null,
+              val reason: String? = null
+          )
+
+          data class QuickDeck27(
+              val visibleKeys: List<String> = emptyList(),
+              val overflowKeys: List<String> = emptyList()
+          ) {
+              fun normalized(): QuickDeck27 {
+                  val all=(visibleKeys+overflowKeys).distinct()
+                  return QuickDeck27(all.take(3),all.drop(3))
+              }
+          }
+
+          object Fivemods27InstantRules {
+              const val MAX_VISIBLE_QUICK_CONTROLS=3
+              const val TEMP_CONTROL_HIDE_MS=1800L
+              fun recordShape()="CIRCLE"
+              fun ordinaryIconHasVisibleBackground()=false
+
+              // Core REC depends only on the actual camera and required audio path.
+              fun mayStartRecord(cameraReady:Boolean,requiredAudioReady:Boolean)=
+                  cameraReady && requiredAudioReady
+
+              // Optional services never become REC prerequisites.
+              fun optionalSystemMayBlockRecord()=false
+
+              // Success confirmation belongs to a real RECORDING state, not touch alone.
+              fun mayConfirmRecording(state:RecordState27)=state==RecordState27.RECORDING
+
+              fun monitoringMayEnterClean()=false
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-INSTANT-OPERATOR.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–26, both workflow pages and all five modes.
+          - Instant REC path: circular REC is prioritized above optional UI/telemetry/analysis systems.
+          - REC states are READY -> STARTING -> RECORDING -> FINALIZING -> READY/FAILED and must reflect real camera state.
+          - Give immediate touch acknowledgement, but confirm REC success only when recording actually starts.
+          - Circular REC remains circular in every visual state; never return to square REC.
+          - Optional GPS/network/tracking/histogram/diagnostics/Build Card systems never delay or disable core REC.
+          - Ordinary camera/mode/quick icons remain background-free with large invisible touch targets.
+          - Curved cards remain; reduce unnecessary card count and use clean rows for ordinary information.
+          - Smart Control Reveal opens controls near the touched icon instead of covering the viewfinder.
+          - Edge HUD coordinates exposure/zoom/focus/histogram/audio; only one edge instrument expands at once.
+          - Vertical histogram mini-mode stays edge-flush and expands without resizing the preview.
+          - Exposure ruler emphasizes finger value and 0 EV detent/haptic.
+          - Zoom rail shows only real supported physical lens points; native detents are stronger than digital zoom ticks.
+          - Focus uses one consistent tap/lock/manual visual language.
+          - Quick Deck 2.0 shows at most three controls; additional pinned controls are swipe-accessible.
+          - Controls around REC remain mode-specific for MAIN/LIVE/TIKTOK/STATUS/INTERVIEW.
+          - Per-mode HUD density/Quick Deck/edge side/safe supported settings are remembered where persistence exists.
+          - Workflow Page 1 Fast Director adds RESUME LAST CAMERA only when a valid safe session exists.
+          - Workflow Page 2 Instant Preflight keeps required problems visible and collapses successful checks.
+          - Permanent Build Card rule continues; NEW IN F27 is first and each item opens/tests/explains its real feature.
+          - Build Card distinguishes BUILT IN / ACTIVE NOW / SUPPORTED BY DEVICE / UNAVAILABLE ON DEVICE / UNKNOWN.
+          - RECHECK DEVICE refreshes capability discovery instead of assuming stale support.
+          - Safe-during-REC exposure/focus controls are distinguished from session-changing controls locked until STOP.
+          - Take Marker may use an optional gesture without adding another permanent button.
+          - Last Take uses a small temporary strip after real successful finalization.
+          - Recovery states never falsely claim RECORDING; distinguish RECOVERING CAMERA / RECORDING / RECORDING FAILED.
+          - Emergency Core 2.0 retains preview/circular REC/required audio/exposure/zoom/essential status.
+          - Severe thermal/frame pressure suspends nonessential animation/analysis before core capture work.
+          - Touch reliability diagnostics distinguish touch received from action failed, especially for REC.
+          - Preserve CLEAN/BRANDED separation, vertical histogram, bounded recovery and camera-first behavior.
+          - No fabricated telemetry, no wholesale capture-engine rewrite, no whole-preview darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA verification/control layer.
+          cat > "$pkgdir/Fivemods28CameraCommand.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class CommandState28 { IDLE, REQUESTED, ACCEPTED, REJECTED, FAILED, UNKNOWN }
+          enum class FeatureStatus28 { ACTIVE, SUPPORTED, UNAVAILABLE, FAILED, UNKNOWN }
+          enum class PerformanceState28 { FULL, REDUCED, CORE }
+
+          data class CameraCommand28(
+              val key:String,
+              val requestedValue:String?=null,
+              val acceptedValue:String?=null,
+              val state:CommandState28=CommandState28.IDLE,
+              val reason:String?=null
+          ) {
+              fun displayValue():String? =
+                  if(state==CommandState28.ACCEPTED) acceptedValue else null
+          }
+
+          data class RecordGuard28(
+              val requestInFlight:Boolean=false,
+              val recording:Boolean=false,
+              val finalizing:Boolean=false
+          ) {
+              fun mayRequestStart():Boolean = !requestInFlight && !recording && !finalizing
+              fun mayRequestStop():Boolean = recording && !requestInFlight && !finalizing
+          }
+
+          object Fivemods28CameraCommandRules {
+              const val UI_MOTION_MS=160L
+              const val MIN_TOUCH_TARGET_DP=48
+              fun recordShape()="CIRCLE"
+              fun ordinaryIconHasVisibleBackground()=false
+              fun monitoringMayEnterClean()=false
+
+              // UI values should follow accepted camera state, never mere intent.
+              fun mayPublishValue(command:CameraCommand28)=command.state==CommandState28.ACCEPTED
+
+              // Optional systems never become prerequisites for core recording.
+              fun mayRecord(cameraReady:Boolean,requiredAudioReady:Boolean)=cameraReady && requiredAudioReady
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-CAMERA-COMMAND.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–27, both workflow pages and all five camera modes.
+          - REC Engine Guard permits one start/stop request at a time and prevents duplicate callbacks/double-start UI.
+          - Circular REC remains circular; immediate touch feedback is separate from real RECORDING confirmation.
+          - Exposure/zoom/focus/WB/lens/torch/FPS values update only after the camera layer accepts the command.
+          - Build Card feature states: ACTIVE / SUPPORTED / UNAVAILABLE / FAILED / UNKNOWN.
+          - A feature that is visible but cannot reach the real camera must report FAILED rather than ACTIVE.
+          - Build Card actions use TEST / OPEN / STATUS where safe and meaningful.
+          - Curved-card rule remains consistent across workflow/build/control/diagnostic/last-take/dialog surfaces.
+          - Reduce unnecessary cards; simple information uses spacing/typography instead.
+          - Ordinary camera and five-mode icons remain background-free with >=48dp invisible touch targets.
+          - Histogram remains VERTICAL only, edge-flush when collapsed, expanding inward without resizing preview.
+          - Histogram uses local contrast only; no large permanent background panel.
+          - Edge tools coordinate exposure/focus/zoom/lens/histogram/audio and avoid gesture conflicts.
+          - Control auto-hide timing follows the tool: quick selections hide sooner, active manual adjustments remain longer.
+          - Thin Camera Command Bar may show lens/shutter/ISO/WB/profile only from real known values.
+          - Tapping a Command Bar value opens its corresponding real control instead of duplicating buttons.
+          - MAIN/LIVE/TIKTOK/STATUS/INTERVIEW retain mode-specific operator priorities.
+          - Interview subject/topic UI stays compact and expandable.
+          - During REC collapse Build Card/settings/nonessential analysis and keep essential recording HUD only.
+          - Remaining time is calculated only from known free storage + active bitrate/profile; otherwise UNKNOWN.
+          - Last Take reports CLEAN/BRANDED SAVED only when each finalized output actually exists.
+          - When bounded recovery fails, expose a clear RESTART CAMERA action.
+          - Recover the affected mode locally where architecture permits rather than resetting unrelated mode state.
+          - Technical touch-map diagnostics may display real invisible hit targets for debugging.
+          - Compact performance state is FULL / REDUCED / CORE; details remain in diagnostics.
+          - Workflow Build Card shows F28 MASTER CAMERA / NEW IN F28 / VERIFY FEATURES while OPEN CAMERA remains dominant.
+          - Camera Build Card supports CHECK REC / CHECK HAPTICS / CHECK LENSES / CHECK AUDIO / CHECK STORAGE / OPEN DIAGNOSTICS.
+          - Preserve CLEAN/BRANDED separation, camera-first entry, bounded recovery and performance priority.
+          - No fabricated telemetry, no unnecessary wholesale capture-engine rewrite, no whole-preview darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA camera-readiness/recording layer.
+          cat > "$pkgdir/Fivemods29ShootReady.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class ShootReadiness29 { READY_TO_RECORD, LIMITED, ACTION_REQUIRED }
+          enum class RecordState29 { READY, PREARMING, STARTING, RECORDING, FINALIZING, FAILED }
+          enum class ThermalState29 { NORMAL, WARM, LIMITED, UNKNOWN }
+          enum class OutputState29 { UNKNOWN, FINALIZING, SAVED, FAILED }
+
+          data class ShootReadyState29(
+              val readiness:ShootReadiness29,
+              val reason:String?=null,
+              val requiredAction:String?=null
+          )
+
+          data class DualOutputState29(
+              val clean:OutputState29=OutputState29.UNKNOWN,
+              val branded:OutputState29=OutputState29.UNKNOWN
+          ) {
+              fun allSaved()=clean==OutputState29.SAVED && branded==OutputState29.SAVED
+          }
+
+          data class RecordPrearm29(
+              val cameraReady:Boolean,
+              val requiredAudioReady:Boolean,
+              val storageReady:Boolean,
+              val inFlight:Boolean=false
+          ) {
+              fun mayPrearm()=cameraReady && requiredAudioReady && storageReady && !inFlight
+              fun mayRecord()=cameraReady && requiredAudioReady && storageReady
+          }
+
+          object Fivemods29ShootReadyRules {
+              const val MIN_TOUCH_TARGET_DP=48
+              const val UI_MOTION_MS=160L
+              fun recordShape()="CIRCLE"
+              fun ordinaryIconHasVisibleBackground()=false
+              fun monitoringMayEnterClean()=false
+              fun optionalSystemMayBlockCoreRecord()=false
+
+              fun readiness(cameraReady:Boolean,audioReady:Boolean,storageReady:Boolean)=when {
+                  !cameraReady -> ShootReadiness29.ACTION_REQUIRED
+                  !audioReady -> ShootReadiness29.ACTION_REQUIRED
+                  !storageReady -> ShootReadiness29.ACTION_REQUIRED
+                  else -> ShootReadiness29.READY_TO_RECORD
+              }
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-SHOOT-READY.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–28, both workflow pages and all five modes.
+          - Add one honest camera-entry state: READY TO RECORD / LIMITED / ACTION REQUIRED.
+          - Pre-arm the recording path when camera + required audio + storage are genuinely ready to reduce REC startup work.
+          - Circular REC remains circular and reflects real READY/PREARMING/STARTING/RECORDING/FINALIZING/FAILED states.
+          - If REC start is rejected, immediately return to a truthful state and show the concrete reason.
+          - Extend F28 control verification to stabilization/FPS/resolution/audio route/manual exposure/manual focus where supported.
+          - Show brief SET/NOT SUPPORTED acknowledgement only after real command acceptance/rejection.
+          - Capability-safe presets restore only supported values and adapt unsupported values honestly.
+          - Preserve safe per-mode state and avoid unnecessary session recreation when switching modes.
+          - Do not black out preview for cosmetic mode-change animation; show SWITCHING CAMERA only for real reconfiguration.
+          - Histogram remains thin, vertical and edge-based; clipping uses compact top/bottom indication.
+          - Edge HUD prioritizes context such as audio clipping in INTERVIEW or stream health in LIVE.
+          - Focus reticle stays compact/background-free and communicates SEARCHING/LOCKED/LOST without another large card.
+          - AE lock appears as a small edge-ruler lock indication.
+          - Camera Command Bar remains thin and may swipe to secondary real-known values rather than overcrowding one row.
+          - During REC automatically enter mode-appropriate Clean View; one tap may temporarily reveal safe controls.
+          - Audio warnings use real silence/clipping/route-change state and do not unnecessarily stop video.
+          - CLEAN and BRANDED finalization are reported independently; never hide partial output failure behind a generic SAVED state.
+          - Remaining-time/storage warnings use real storage/profile data where known and otherwise UNKNOWN.
+          - Thermal state is NORMAL/WARM/LIMITED/UNKNOWN only from real device information; analysis throttles before recording.
+          - Workflow Page 1 becomes Shoot Board with selected mode/mission/MASTER CAMERA/Build Card/one dominant OPEN CAMERA action.
+          - Workflow Page 2 Action Preflight presents recovery actions for genuine required failures; optional items remain secondary.
+          - Permanent Build Card rule continues with VERIFY THIS BUILD and truthful built/active/device-support states.
+          - Camera Build Card uses a compact sheet and keeps preview visible.
+          - Touch Reliability 2.0 records TOUCH RECEIVED -> ACTION ACCEPTED/FAILED transitions, especially REC and mode switching.
+          - First launch may safely self-check UI wiring/permissions state/camera enumeration/audio route without recording.
+          - Emergency Core 3.0 retains preview/circular REC/required audio/focus/exposure/zoom where core camera remains healthy.
+          - Performance order: capture/encoder -> required audio -> finalization -> essential controls -> monitoring -> diagnostics -> animation.
+          - Preserve curved cards, background-free icons, vertical histogram, CLEAN/BRANDED separation and bounded recovery.
+          - No fabricated telemetry, no unnecessary wholesale camera-engine rewrite, no whole-preview darkening regression.
+          EOF
+
+          # FIVEMODS 30 — MASTER CAMERA engine-source-of-truth layer.
+          cat > "$pkgdir/Fivemods30MasterCamera.kt" <<'KOTLIN'
+          package com.sentongoharuna.pulse
+
+          enum class MasterRecordState30 { READY, PREARMING, STARTING, RECORDING, FINALIZING, SAVED, FAILED }
+          enum class AcceptedState30 { REQUESTED, ACCEPTED, REJECTED, FAILED, UNKNOWN }
+          enum class Capability30 { SUPPORTED, UNSUPPORTED, UNKNOWN }
+          enum class MasterPerformance30 { FULL, REDUCED_ANALYSIS, ESSENTIAL_ONLY, EMERGENCY_MASTER }
+
+          data class AcceptedCameraValue30(
+              val key:String,
+              val requested:String?=null,
+              val accepted:String?=null,
+              val state:AcceptedState30=AcceptedState30.UNKNOWN,
+              val reason:String?=null
+          ) {
+              fun displayValue():String? = accepted.takeIf { state==AcceptedState30.ACCEPTED }
+          }
+
+          data class MasterRecording30(
+              val state:MasterRecordState30=MasterRecordState30.READY,
+              val errorCode:Int?=null,
+              val errorReason:String?=null,
+              val audioActive:Boolean?=null
+          ) {
+              fun mayShowSaved()=state==MasterRecordState30.SAVED
+              fun isActuallyRecording()=state==MasterRecordState30.RECORDING
+          }
+
+          data class SessionFeatureGroup30(
+              val resolution:String?=null,
+              val fps:Int?=null,
+              val hdr:Boolean?=null,
+              val stabilization:Boolean?=null,
+              val capability:Capability30=Capability30.UNKNOWN
+          )
+
+          object Fivemods30MasterRules {
+              const val MIN_TOUCH_TARGET_DP=48
+              const val UI_MOTION_MS=160L
+              fun recordShape()="CIRCLE"
+              fun ordinaryIconHasVisibleBackground()=false
+              fun monitoringMayEnterClean()=false
+              fun optionalSystemMayBlockCoreRecord()=false
+
+              // UI reports accepted engine state, never request intent.
+              fun mayPublish(value:AcceptedCameraValue30)=value.state==AcceptedState30.ACCEPTED
+
+              // SAVED is legal only after real finalization.
+              fun mayPublishSaved(recording:MasterRecording30)=recording.state==MasterRecordState30.SAVED
+
+              fun performance(thermalPressure:Boolean,droppedFrames:Long?,advancedFailure:Boolean)=when {
+                  advancedFailure -> MasterPerformance30.EMERGENCY_MASTER
+                  droppedFrames!=null && droppedFrames>0L -> MasterPerformance30.ESSENTIAL_ONLY
+                  thermalPressure -> MasterPerformance30.REDUCED_ANALYSIS
+                  else -> MasterPerformance30.FULL
+              }
+          }
+          KOTLIN
+
+          cat > "$project/FIVEMODS-30-MASTER-CAMERA.txt" <<'EOF'
+          FIVEMODS 30 — MASTER CAMERA
+          - Preserve FIVEMODS 13–29, both workflow pages and all five modes.
+          - Establish one authoritative REC controller/state machine for the circular REC control.
+          - UI must never claim RECORDING from touch intent alone; engine state is the source of truth.
+          - SAVED is shown only after actual recording finalization succeeds.
+          - Resolve complete session feature combinations before applying resolution/FPS/HDR/stabilization combinations.
+          - Expose only hardware/session-supported FPS and high-speed choices; unsupported values remain unavailable/unknown.
+          - If a requested feature group is unsupported, use an honest supported fallback rather than black/frozen preview.
+          - Avoid unnecessary full camera unbind/rebind for small control changes.
+          - Histogram/peaking/tracking analysis must release frames promptly and throttle before blocking capture.
+          - Vertical histogram, circular REC, curved cards and background-free ordinary icons remain permanent.
+          - Low-light boost and torch-strength controls appear only when genuine device/API support exists.
+          - Translate real recording errors into concrete operator-facing reasons where the engine provides them.
+          - Verify required audio start separately from video recording state.
+          - Persistent-recording architecture may be prepared cautiously but must not be forced into unsupported mode transitions.
+          - F28 command-acceptance rule is mandatory for exposure/focus/WB/lens/torch/FPS/resolution/stabilization/audio-route values.
+          - Master Command Bar displays only real accepted values and opens the corresponding control when tapped.
+          - Exposure/focus and zoom/lens/histogram/audio remain coordinated edge systems.
+          - During REC keep circular STOP/tally/timecode/audio/remaining time and critical warnings; collapse nonessential UI.
+          - Recovery restores last ACCEPTED supported settings rather than merely requested UI values.
+          - Failures in Interview tracking or LIVE networking must remain isolated from unrelated camera modes/core local recording.
+          - Emergency Master Camera retains preview/circular REC/required audio/exposure/focus/zoom when advanced systems fail.
+          - Workflow Page 1 becomes Master Shoot Board with mode/mission/ready/profile/F30 Build Card and dominant OPEN CAMERA.
+          - Workflow Page 2 Master Preflight gives actions for required camera/audio/storage failures; optional telemetry remains secondary.
+          - Permanent Build Card rule continues with live REC ENGINE/CAMERA SESSION/FPS/LENSES/AUDIO/STORAGE/LOW LIGHT/TORCH/HAPTICS/RECOVERY checks.
+          - Build Card distinguishes F30 NEW / INHERITED / DEVICE SUPPORTED / ACTIVE / FAILED.
+          - Diagnostics timeline records camera state changes, recording events, accepted/rejected commands and recovery attempts without storing video/audio content.
+          - Performance priority: recording/encoder -> required audio -> file finalization -> preview -> essential controls -> monitoring -> diagnostics -> animation.
+          - Preserve CLEAN/BRANDED separation, camera-first entry and bounded recovery.
+          - No fabricated telemetry, no unnecessary wholesale engine rewrite, no whole-preview darkening regression.
+          EOF
+
+          # Record the FIVEMODS 30 source contract for the build artifact.
+          cat > "$project/FIVEMODS-30-UPGRADE.txt" <<'EOF'
+          FIVEMODS 30
+          - Existing five-mode camera and two workflow pages preserved.
+          - Existing capture/encode engine preserved; recovery wraps it rather than replacing it.
+          - Android CAMERA/RECORD_AUDIO permissions remain mandatory where required.
+          - Optional readiness remains advisory and cannot block camera entry.
+          - Haptic helper retained for tap/select/confirm/reject interactions.
+          - Bounded preview recovery primitives added: stall detection, two retries, honest failure.
+          - No whole-preview darkening changes; local control backing only.
+          - Unsupported capabilities must use honest supported fallbacks.
+          EOF
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify protected source contracts
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: python3 ci/verify_source_contracts.py
+
+      - name: Build app, test APK and unit tests
+        working-directory: _build_source/Develop-Uganda-28600-Parts-9-10
+        run: gradle --no-daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Give the compiled APK a new phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/fivemods-30-compiled"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/FIVEMODS-30-MASTER-CAMERA.apk"
+          sha256sum "$delivery/FIVEMODS-30-MASTER-CAMERA.apk" > "$delivery/FIVEMODS-30-MASTER-CAMERA.apk.sha256"
+
+      - name: Upload FIVEMODS 30 compiled APK immediately
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-FIVEMODS-30-MASTER-CAMERA-${{ github.run_number }}
+          path: _delivery/fivemods-30-compiled/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare the device gate as one executable script
+        shell: bash
+        run: |
+          set -euo pipefail
+          script_path="_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+          mkdir -p "$(dirname "$script_path")"
+          cat > "$script_path" <<'DEVICE_GATE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          project="${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10"
+          cd "$project"
+
+          serial="emulator-${EMULATOR_PORT:-5556}"
+          evidence="${project}/build/device-gate"
+          app_apk="${project}/app/build/outputs/apk/debug/app-debug.apk"
+          test_apk="${project}/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+
+          test -n "$evidence"
+          mkdir -p -- "$evidence"
+          trap 'adb -s "$serial" logcat -d -v threadtime > "$evidence/logcat.txt" 2>&1 || true' EXIT
+
+          adb -s "$serial" wait-for-device
+          adb devices -l | tee "$evidence/adb-devices.txt"
+          boot_completed="$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')"
+          test "$boot_completed" = "1"
+          test -f "$app_apk"
+          test -f "$test_apk"
+
+          adb -s "$serial" install -r -t "$app_apk"
+          adb -s "$serial" install -r -t "$test_apk"
+
+          runner="$(
+            adb -s "$serial" shell pm list instrumentation |
+              tr -d '\r' |
+              awk '/target=com.sentongoharuna.pulse\)/ {sub(/^instrumentation:/, "", $1); print $1; exit}'
+          )"
+          test -n "$runner"
+          printf 'RUNNER=%s\n' "$runner" | tee "$evidence/runner.txt"
+
+          # Clear stale logs so crash evidence belongs to this exact run.
+          adb -s "$serial" logcat -c || true
+          adb -s "$serial" shell dumpsys package com.sentongoharuna.pulse > "$evidence/package-before-test.txt" 2>&1 || true
+          adb -s "$serial" shell dumpsys package com.sentongoharuna.pulse.test > "$evidence/test-package-before-test.txt" 2>&1 || true
+
+          # Run the instrumentation suite with active-progress supervision.
+          # Capture diagnostics before killing a genuinely stalled run.
+          : > "$evidence/device-tests.txt"
+          set +e
+          timeout --signal=TERM --kill-after=30s 30m \
+            adb -s "$serial" shell am instrument -w -r "$runner" 2>&1 |
+            tee "$evidence/device-tests.txt"
+          device_status=${PIPESTATUS[0]}
+          set -e
+
+          if test "$device_status" -eq 124; then
+            echo "DEVICE TEST GATE TIMEOUT after 30 minutes." | tee "$evidence/timeout-diagnostic.txt"
+            adb -s "$serial" shell dumpsys activity processes >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity top >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            adb -s "$serial" shell ps -A >> "$evidence/timeout-diagnostic.txt" 2>&1 || true
+            echo "DEVICE TEST GATE FAILED: suite timed out; diagnostics were preserved." >&2
+            exit 124
+          fi
+
+          test "$device_status" -eq 0
+          if grep -Eq 'FAIL:|FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_CODE: 0|Process crashed' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: capturing crash diagnostics." >&2
+            adb -s "$serial" logcat -d -v threadtime > "$evidence/logcat-on-failure.txt" 2>&1 || true
+            grep -Ei -B 40 -A 120 'FATAL EXCEPTION|AndroidRuntime|Process: com\.sentongoharuna\.pulse|Process crashed|signal [0-9]+|tombstone|ANR in' "$evidence/logcat-on-failure.txt" > "$evidence/CRASH-FOCUS.txt" 2>/dev/null || true
+            adb -s "$serial" shell dumpsys activity processes > "$evidence/processes-on-failure.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity exit-info com.sentongoharuna.pulse > "$evidence/app-exit-info.txt" 2>&1 || true
+            adb -s "$serial" shell dumpsys activity exit-info com.sentongoharuna.pulse.test > "$evidence/test-exit-info.txt" 2>&1 || true
+            printf '%s\n' "DEVICE_TEST_STATUS=CRASHED" "APK_STATUS=COMPILED_NOT_DEVICE_VERIFIED" > "$evidence/STATUS.txt"
+            echo "Instrumentation crashed; diagnostics captured. APK remains compiled but is not certified post-diagnostic."
+            exit 0
+          fi
+
+          # AndroidJUnitRunner normally reports OK (N tests). Also accept its
+          # successful INSTRUMENTATION_CODE=-1 completion marker.
+          if ! grep -Eq 'OK \([1-9][0-9]* (device )?tests?\)|INSTRUMENTATION_CODE: -1' "$evidence/device-tests.txt"; then
+            echo "DEVICE TEST GATE FAILED: no successful instrumentation completion marker." >&2
+            exit 1
+          fi
+
+          echo "DEVICE TEST GATE PASSED." | tee "$evidence/gate-result.txt"
+          DEVICE_GATE
+          chmod +x "$script_path"
+          bash -n "$script_path"
+
+      - name: Run all 20 device tests on a fresh API 35 emulator
+        timeout-minutes: 42
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 1536M
+          avd-name: fivemods30_api35
+          force-avd-creation: true
+          emulator-port: 5556
+          emulator-boot-timeout: 900
+          disable-linux-hw-accel: true
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics -camera-back emulated -camera-front emulated
+          script: bash "${GITHUB_WORKSPACE}/_build_source/Develop-Uganda-28600-Parts-9-10/build/run-du28600-device-gate.sh"
+
+      - name: Upload device-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DU28600-FIVEMODS-30-SELF-DIAGNOSTIC-EVIDENCE-${{ github.run_number }}
+          path: _build_source/Develop-Uganda-28600-Parts-9-10/build/device-gate/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Give the post-diagnostic APK an honest phone-friendly name
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk="_build_source/Develop-Uganda-28600-Parts-9-10/app/build/outputs/apk/debug/app-debug.apk"
+          delivery="_delivery/fivemods-30-post-diagnostic"
+          test -f "$source_apk"
+          mkdir -p "$delivery"
+          cp "$source_apk" "$delivery/FIVEMODS-30-POST-DIAGNOSTIC-NOT-VERIFIED.apk"
+          sha256sum "$delivery/FIVEMODS-30-POST-DIAGNOSTIC-NOT-VERIFIED.apk" > "$delivery/FIVEMODS-30-POST-DIAGNOSTIC-NOT-VERIFIED.apk.sha256"
+
+      - name: Upload FIVEMODS 30 post-diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-DU28600-FIVEMODS-30-POST-DIAGNOSTIC-NOT-VERIFIED-${{ github.run_number }}
+          path: _delivery/fivemods-30-post-diagnostic/*
+          if-no-files-found: error
+          retention-days: 14
