@@ -1,0 +1,81 @@
+name: SECTION1 R4 CLEAN HUD APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Apply R4 clean HUD source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          test -s "$F"
+          python3 - "$F" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          s=p.read_text()
+          start='            listOf(cleanButton, lockButton, markButton, guideButton, handButton, nightButton, dimButton).forEach {'
+          a=s.find(start)
+          if a < 0:
+              raise SystemExit("R4 legacy rail block not found")
+          b=s.find('            applyChromeColor()', a)
+          if b < 0:
+              raise SystemExit("R4 legacy rail end not found")
+          replacement='''            // SECTION1-R4: remove permanent legacy preview rail.
+            // Existing Activity recordButton remains the recording control.
+            controlRail.visibility = View.GONE
+'''
+          s=s[:a]+replacement+s[b:]
+          s=s.replace('visibility = if (prefs.getBoolean("guides", false)) View.VISIBLE else View.GONE','visibility = View.GONE',1)
+          p.write_text(s)
+          PY
+          grep -q "SECTION1-R4: remove permanent legacy preview rail" "$F"
+
+      - name: Verify source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          P="app/src/main/java/com/sentongoharuna/pulse"
+          grep -q 'tag = "f12_status_strip"' "$P/DevelopUgandaFivemods12FieldUi.kt"
+          grep -q 'recordButton' "$P/DevelopUgandaCameraActivity.kt"
+
+      - name: Build APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/SECTION1-R4-CLEAN-HUD.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-R4-CLEAN-HUD
+          path: out/SECTION1-R4-CLEAN-HUD.apk
+          if-no-files-found: error
