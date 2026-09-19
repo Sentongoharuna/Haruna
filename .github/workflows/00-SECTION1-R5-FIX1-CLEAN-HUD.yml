@@ -1,0 +1,104 @@
+name: SECTION1 R5 FIX1 CLEAN HUD APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/00-SECTION1-R5-FIX1-CLEAN-HUD.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Apply R5 FIX1 clean HUD
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          test -s "$F"
+
+          python3 - "$F" <<'PY'
+          from pathlib import Path
+          import re, sys
+
+          p = Path(sys.argv[1])
+          s = p.read_text()
+
+          # Match the actual committed Kotlin structurally instead of requiring
+          # an exact whitespace copy of the old block.
+          pattern = re.compile(
+              r'(?ms)^[ \t]*listOf\(cleanButton,\s*lockButton,\s*markButton,\s*'
+              r'guideButton,\s*handButton,\s*nightButton,\s*dimButton\)\.forEach\s*\{'
+              r'.*?^[ \t]*root\.addView\(controlRail\)\s*\n'
+              r'[ \t]*placeRail\(\)\s*\n'
+          )
+          replacement = (
+              '            // SECTION1-R5-FIX1: no permanent legacy rail over preview.\n'
+              '            // Real Activity record control remains untouched.\n'
+              '            controlRail.visibility = View.GONE\n'
+          )
+          s2, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f"R5 FIX1 could not locate legacy rail structurally; matches={n}")
+
+          s2 = s2.replace(
+              'visibility = if (prefs.getBoolean("guides", false)) View.VISIBLE else View.GONE',
+              'visibility = View.GONE',
+              1
+          )
+
+          p.write_text(s2)
+          PY
+
+          grep -q "SECTION1-R5-FIX1: no permanent legacy rail over preview" "$F"
+          if grep -q "root.addView(controlRail)" "$F"; then
+            echo "Legacy rail is still mounted"
+            exit 1
+          fi
+          echo "R5 FIX1 SOURCE PATCH PASS"
+
+      - name: Verify protected contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          P="app/src/main/java/com/sentongoharuna/pulse"
+          grep -q 'tag = "f12_status_strip"' "$P/DevelopUgandaFivemods12FieldUi.kt"
+          grep -q 'recordButton' "$P/DevelopUgandaCameraActivity.kt"
+
+      - name: Test and build APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare R5 FIX1 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          mkdir -p out
+          cp "$APK" out/SECTION1-R5-FIX1-CLEAN-HUD.apk
+          sha256sum out/SECTION1-R5-FIX1-CLEAN-HUD.apk
+
+      - name: Upload R5 FIX1 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-R5-FIX1-CLEAN-HUD
+          path: out/SECTION1-R5-FIX1-CLEAN-HUD.apk
+          if-no-files-found: error
+          retention-days: 14
