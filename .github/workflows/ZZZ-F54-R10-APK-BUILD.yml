@@ -1,0 +1,69 @@
+name: ZZZ F54 R10 APK BUILD
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/ZZZ-F54-R10-APK-BUILD.yml"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out committed source
+        uses: actions/checkout@v6
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify R10 source is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f app/build.gradle.kts
+          test -f app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          grep -q 'DevelopUgandaFivemods12CameraShell.attach' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          echo "Committed Android source found."
+
+      - name: Verify protected source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+
+      - name: Test and build APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare one phone-friendly APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="SECTION1-R10-LIVE-STYLE-ALL-CAMS-${GITHUB_RUN_NUMBER}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload R10 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-R10-LIVE-STYLE-ALL-CAMS-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
