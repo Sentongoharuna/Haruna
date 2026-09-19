@@ -1,0 +1,97 @@
+name: 00 - SECTION 1 R2 FAST APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/00-UPLOAD-SECTION1-R2-FAST-APK-AUTORUN.yml"
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+      - name: Verify Section 1 source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          P="app/src/main/java/com/sentongoharuna/pulse"
+          PREF="$P/DevelopUgandaSafePreferences.kt"
+          REL="$P/DevelopUgandaFivemods12Reliability.kt"
+          SAFETY="$P/DevelopUgandaV276RecordingSafety.kt"
+          FIELD="$P/DevelopUgandaFivemods12FieldUi.kt"
+          TEST="app/src/androidTest/java/com/sentongoharuna/pulse/DevelopUgandaFiveModeInstrumentation.kt"
+          grep -q 'develop_uganda_live_camera/audio' "$PREF"
+          for g in getBoolean getInt getLong getFloat getString getStringSet; do grep -q "override fun $g" "$PREF"; done
+          grep -q 'StorageManager' "$SAFETY"
+          grep -q 'StatFs' "$SAFETY"
+          grep -q 'getExternalFilesDir' "$SAFETY"
+          grep -q 'estimatedRecordMinutes' "$SAFETY"
+          grep -q 'UNKNOWN is never a refusal' "$REL"
+          grep -q 'THERMAL_STATUS_SEVERE' "$SAFETY"
+          grep -q 'needsOperatorOverride' "$SAFETY"
+          grep -Rqs 'OPERATOR START ANYWAY' "$P/DevelopUgandaCameraActivity.kt" "$P/DevelopUgandaLiveActivity.kt" "$P/DevelopUgandaRtmpsLiveActivity.kt"
+          grep -q 'tag = "f12_status_strip"' "$FIELD"
+          grep -q 'forPage(it).accent' "$P/DevelopUgandaDialogStyler.kt"
+          for t in wrongTypedLivePreferenceMigratesAndLiveOpens measuredStorageIsPositive moderateThermalAndUnknownStorageAllowRecording measuredCriticalPreflightRefuses warningThresholdRequiresRecordedOverride cameraStatusHasOneOwnerAtLargestFontScale; do grep -q "$t" "$TEST"; done
+      - name: Unit tests and APK build
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Prepare final APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          OUT="SECTION1-R2-FIELD-FAULTS-FAST-${{ github.run_number }}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-R2-FAST-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  emulator-diagnostic:
+    needs: build-apk
+    if: ${{ always() && needs.build-apk.result == 'success' }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: API 35 diagnostics
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: gradle --no-daemon :app:connectedDebugAndroidTest
