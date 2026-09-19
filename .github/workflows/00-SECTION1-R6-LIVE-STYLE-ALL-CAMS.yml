@@ -1,0 +1,63 @@
+name: SECTION1 R6 LIVE STYLE ALL CAMS APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [".github/workflows/00-SECTION1-R6-LIVE-STYLE-ALL-CAMS.yml"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: R6 remove remaining legacy camera chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          C=app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt
+          test -s "$C"
+          python3 - "$C" <<'PY'
+          from pathlib import Path
+          import re,sys
+          p=Path(sys.argv[1]); s=p.read_text()
+          s=s.replace('visibility = if (prefs.getBoolean("guides", false)) View.VISIBLE else View.GONE','visibility = View.GONE')
+          pat=re.compile(r'(?ms)^[ \t]*listOf\(cleanButton,\s*lockButton,\s*markButton,\s*guideButton,\s*handButton,\s*nightButton,\s*dimButton\)\.forEach\s*\{.*?^[ \t]*root\.addView\(controlRail\)\s*\n[ \t]*placeRail\(\)\s*\n')
+          s,n=pat.subn('            // SECTION1-R6: LIVE-style clean preview; legacy rail not mounted.\n            controlRail.visibility = View.GONE\n',s,count=1)
+          if n==0 and 'root.addView(controlRail)' in s:
+              raise SystemExit('R6 legacy rail removal failed')
+          p.write_text(s)
+          PY
+          ! grep -q "root.addView(controlRail)" "$C"
+      - name: Verify clean HUD contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          P=app/src/main/java/com/sentongoharuna/pulse
+          grep -q 'tag = "f12_status_strip"' "$P/DevelopUgandaFivemods12FieldUi.kt"
+          grep -q 'recordButton' "$P/DevelopUgandaCameraActivity.kt"
+          grep -q 'DevelopUgandaFivemods12CameraShell.attach' "$P/DevelopUgandaCameraActivity.kt"
+      - name: Test and build
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/SECTION1-R6-LIVE-STYLE-ALL-CAMS.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-R6-LIVE-STYLE-ALL-CAMS
+          path: out/SECTION1-R6-LIVE-STYLE-ALL-CAMS.apk
+          if-no-files-found: error
+          retention-days: 14
