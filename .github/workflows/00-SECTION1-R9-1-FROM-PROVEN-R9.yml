@@ -1,0 +1,70 @@
+name: 00 - SECTION1 R9-1 FROM PROVEN R9 APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [".github/workflows/00-SECTION1-R9-1-FROM-PROVEN-R9.yml"]
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+      - name: Recover exact proven R9 patch from repository history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show 8883a1402fb10bb2234b8e3f7cf1a7a26609b533:.github/workflows/00-SECTION1-R9-CLEAR-UI-REAL-SOURCE.yml > /tmp/r9.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, base64
+          y=Path('/tmp/r9.yml').read_text()
+          m=re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d > /tmp/r9_patch.py",y)
+          if not m: raise SystemExit("Exact R9 patch not found")
+          Path('/tmp/r9_patch.py').write_bytes(base64.b64decode(m.group(1)))
+          PY
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          B="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          test -s "$A"; test -s "$B"
+          python3 /tmp/r9_patch.py "$A" "$B"
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'SECTION1-R9-CLEAR-UI' "$A"
+          ! grep -q 'root.addView(controlRail)' "$B"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+          echo "EXACT R9 VISUAL PATCH RESTORED"
+      - name: Verify protected source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          P="app/src/main/java/com/sentongoharuna/pulse"
+          grep -q 'tag = "f12_status_strip"' "$P/DevelopUgandaFivemods12FieldUi.kt"
+          grep -q 'recordButton.setOnTouchListener' "$P/DevelopUgandaCameraActivity.kt"
+      - name: Unit tests and APK build
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          OUT="SECTION1-R9-1-FROM-PROVEN-R9-${{ github.run_number }}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-R9-1-FROM-PROVEN-R9-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
