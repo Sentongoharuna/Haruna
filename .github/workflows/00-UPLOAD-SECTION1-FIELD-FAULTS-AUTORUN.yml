@@ -1,0 +1,111 @@
+name: 00 - SECTION 1 FIELD FAULTS VERIFIED APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/00-UPLOAD-SECTION1-FIELD-FAULTS-AUTORUN.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  section1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Verify Section 1 source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+
+          P="app/src/main/java/com/sentongoharuna/pulse"
+          PREF="$P/DevelopUgandaSafePreferences.kt"
+          REL="$P/DevelopUgandaFivemods12Reliability.kt"
+          SAFETY="$P/DevelopUgandaV276RecordingSafety.kt"
+          FIELD="$P/DevelopUgandaFivemods12FieldUi.kt"
+          TEST="app/src/androidTest/java/com/sentongoharuna/pulse/DevelopUgandaFiveModeInstrumentation.kt"
+
+          # 1-2 typed preference containment and migration.
+          grep -q 'develop_uganda_live_camera/audio' "$PREF"
+          grep -q '"ON"' "$PREF"
+          for g in getBoolean getInt getLong getFloat getString getStringSet; do
+            grep -q "override fun $g" "$PREF"
+          done
+
+          # 3-4 measured storage and capacity.
+          grep -q 'StorageManager' "$SAFETY"
+          grep -q 'StatFs' "$SAFETY"
+          grep -q 'getExternalFilesDir' "$SAFETY"
+          grep -q 'estimatedRecordMinutes' "$SAFETY"
+
+          # 5-8 unknown/warning cannot silently refuse.
+          grep -q 'UNKNOWN is never a refusal' "$REL"
+          grep -q 'THERMAL_STATUS_SEVERE' "$SAFETY"
+          grep -q 'needsOperatorOverride' "$SAFETY"
+          grep -Rqs 'OPERATOR START ANYWAY' "$P/DevelopUgandaCameraActivity.kt" "$P/DevelopUgandaLiveActivity.kt" "$P/DevelopUgandaRtmpsLiveActivity.kt"
+
+          # 9-10 single status owner / old status blocks absent.
+          grep -q 'tag = "f12_status_strip"' "$FIELD"
+          for f in mode format codec timecode storage battery audio; do
+            test "$(grep -c "val $f = metric()" "$FIELD")" -eq 1
+          done
+
+          # 11 mode accent owns dialog actions.
+          grep -q 'forPage(it).accent' "$P/DevelopUgandaDialogStyler.kt"
+
+          # Required Section 1 instrumented regressions.
+          for t in wrongTypedLivePreferenceMigratesAndLiveOpens measuredStorageIsPositive moderateThermalAndUnknownStorageAllowRecording measuredCriticalPreflightRefuses warningThresholdRequiresRecordedOverride cameraStatusHasOneOwnerAtLargestFontScale; do
+            grep -q "$t" "$TEST"
+          done
+
+          echo "SECTION 1 SOURCE CONTRACTS PASS"
+
+      - name: Build APK unit tests and instrumentation APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Section 1 on API 35 device
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          script: gradle --no-daemon :app:connectedDebugAndroidTest
+
+      - name: Package one verified Section 1 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk \
+            SECTION1-FIELD-FAULTS-VERIFIED-${{ github.run_number }}.apk
+          sha256sum SECTION1-FIELD-FAULTS-VERIFIED-${{ github.run_number }}.apk \
+            > SECTION1-FIELD-FAULTS-VERIFIED-${{ github.run_number }}.apk.sha256
+
+      - name: Upload Section 1 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-FIELD-FAULTS-VERIFIED-${{ github.run_number }}
+          path: |
+            SECTION1-FIELD-FAULTS-VERIFIED-${{ github.run_number }}.apk
+            SECTION1-FIELD-FAULTS-VERIFIED-${{ github.run_number }}.apk.sha256
+          if-no-files-found: error
