@@ -1,0 +1,61 @@
+name: 00 - SECTION1 R9 CLEAR UI REAL SOURCE APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [".github/workflows/00-SECTION1-R9-CLEAR-UI-REAL-SOURCE.yml"]
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+      - name: Apply R9 real camera UI source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          B="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          test -s "$A"; test -s "$B"
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCBzeXMKYT1QYXRoKHN5cy5hcmd2WzFdKTsgYj1QYXRoKHN5cy5hcmd2WzJdKTsgcz1hLnJlYWRfdGV4dCgpCmRlZiBvbmUob2xkLG5ldyxsYWJlbCk6CiAgICBnbG9iYWwgcwogICAgaWYgb2xkIG5vdCBpbiBzOiByYWlzZSBTeXN0ZW1FeGl0KCdSOSBTT1VSQ0UgQ09OVFJBQ1QgTUlTU0lORzogJytsYWJlbCkKICAgIHM9cy5yZXBsYWNlKG9sZCxuZXcsMSkKb25lKCcgICAgICAgIGJvdHRvbURlY2suYWRkVmlldyhtb2RlUm93KVxuJywnICAgICAgICAvLyBTRUNUSU9OMS1SOTogcGVybWFuZW50IHNldHRpbmdzIHJvdyByZW1vdmVkLlxuICAgICAgICBtb2RlUm93LnZpc2liaWxpdHkgPSBWaWV3LkdPTkVcbicsJ21vZGVSb3cnKQpvbmUoJyAgICAgICAgYm90dG9tRGVjay5hZGRWaWV3KHpvb21Sb3cpXG4nLCcgICAgICAgIHpvb21Sb3cudmlzaWJpbGl0eSA9IFZpZXcuR09ORVxuJywnem9vbVJvdycpCm9uZSgnICAgICAgICBib3R0b21EZWNrLmFkZFZpZXcoZXhwb3N1cmVSb3cpXG4nLCcgICAgICAgIGV4cG9zdXJlUm93LnZpc2liaWxpdHkgPSBWaWV3LkdPTkVcbicsJ2V4cG9zdXJlUm93JykKb25lKCcgICAgICAgICAgICAgICAgZHAoMTUwKSxcbiAgICAgICAgICAgICAgICBkcCg2MiksXG4gICAgICAgICAgICAgICAgR3Jhdml0eS5DRU5URVJcbicsJyAgICAgICAgICAgICAgICBkcCg4NCksXG4gICAgICAgICAgICAgICAgZHAoODQpLFxuICAgICAgICAgICAgICAgIEdyYXZpdHkuQ0VOVEVSXG4nLCdyZWNvcmQgc3RhdGUnKQpvbmUoJyAgICAgICAgICAgICAgICBkcCgxMzIpLFxuICAgICAgICAgICAgICAgIGRwKDUwKSxcbiAgICAgICAgICAgICAgICBHcmF2aXR5LkNFTlRFUlxuJywnICAgICAgICAgICAgICAgIGRwKDc4KSxcbiAgICAgICAgICAgICAgICBkcCg3OCksXG4gICAgICAgICAgICAgICAgR3Jhdml0eS5DRU5URVJcbicsJ3JlY29yZCBnZW9tZXRyeScpCm9uZSgnICAgICAgICAgICAgd3JhcCgxNTAsIDYyKVxuJywnICAgICAgICAgICAgd3JhcCg4NiwgODYpXG4nLCdyZWNvcmQgYXJlYScpCnN0YXJ0PXMuZmluZCgnICAgIHByaXZhdGUgZnVuIG1ha2VSZWNvcmRCdXR0b24oKTogQnV0dG9uIHsnKQplbmQ9cy5maW5kKCcgICAgcHJpdmF0ZSBmdW4gc3BhY2Uod2lkdGg6IEludCk6IFZpZXcgeycsc3RhcnQpCmlmIHN0YXJ0PDAgb3IgZW5kPDA6IHJhaXNlIFN5c3RlbUV4aXQoJ1I5IFNPVVJDRSBDT05UUkFDVCBNSVNTSU5HOiBtYWtlUmVjb3JkQnV0dG9uJykKbmV3X3JlY29yZD0nJycgICAgcHJpdmF0ZSBmdW4gbWFrZVJlY29yZEJ1dHRvbigpOiBCdXR0b24gewogICAgICAgIHJldHVybiBCdXR0b24odGhpcykuYXBwbHkgewogICAgICAgICAgICB0YWcgPSAicjlfbGl2ZV9zdHlsZV9yZWNvcmQiCiAgICAgICAgICAgIHRleHQgPSAi4pePIgogICAgICAgICAgICB0ZXh0U2l6ZSA9IDIyZgogICAgICAgICAgICBpc0FsbENhcHMgPSBmYWxzZQogICAgICAgICAgICBzZXRUZXh0Q29sb3IoRGV2ZWxvcFVnYW5kYUZpdmVtb2RzOFRoZW1lLmNvbnRlbnQpCiAgICAgICAgICAgIG1pbldpZHRoID0gZHAoNzgpCiAgICAgICAgICAgIG1pbkhlaWdodCA9IGRwKDc4KQogICAgICAgICAgICBtaW5pbXVtV2lkdGggPSBkcCg3OCkKICAgICAgICAgICAgbWluaW11bUhlaWdodCA9IGRwKDc4KQogICAgICAgICAgICBzZXRQYWRkaW5nKDAsIDAsIDAsIDApCiAgICAgICAgICAgIGJhY2tncm91bmQgPSBHcmFkaWVudERyYXdhYmxlKCkuYXBwbHkgewogICAgICAgICAgICAgICAgc2hhcGUgPSBHcmFkaWVudERyYXdhYmxlLk9WQUwKICAgICAgICAgICAgICAgIHNldENvbG9yKERldmVsb3BVZ2FuZGFGaXZlbW9kczhUaGVtZS50cmFuc3BhcmVudCkKICAgICAgICAgICAgICAgIHNldFN0cm9rZShkcCgyKSwgRGV2ZWxvcFVnYW5kYUZpdmVtb2RzOFRoZW1lLnJlY29yZCkKICAgICAgICAgICAgfQogICAgICAgICAgICBjb250ZW50RGVzY3JpcHRpb24gPSAiUmVjb3JkIgogICAgICAgIH0KICAgIH0KCicnJwpzPXNbOnN0YXJ0XStuZXdfcmVjb3JkK3NbZW5kOl0KbmVlZGxlPScnJyAgICAgICAgaWYgKDo6bGVuc0J1dHRvbi5pc0luaXRpYWxpemVkKSB7CiAgICAgICAgICAgIGxlbnNCdXR0b24udGV4dCA9CiAgICAgICAgICAgICAgICAiTEVOUyDilr5cXG4ke2N1cnJlbnRMZW5zRGVja0xhYmVsKCl9IgogICAgICAgIH0KICAgIH0KJycnCmlmIG5lZWRsZSBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnUjkgU09VUkNFIENPTlRSQUNUIE1JU1NJTkc6IHJlZnJlc2hIdWQgdGFpbCcpCmNsZWFuPW5lZWRsZVs6LTZdKycnJyAgICAgICAgLy8gU0VDVElPTjEtUjktQ0xFQVItVUk6IGtlZXAgb25seSBGMTIgc3RyaXAgKyB0cmFuc3BvcnQgKyBuYXZpZ2F0b3IuCiAgICAgICAgaWYgKDo6bW9kZVJvdy5pc0luaXRpYWxpemVkKSBtb2RlUm93LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICBpZiAoOjp6b29tUm93LmlzSW5pdGlhbGl6ZWQpIHpvb21Sb3cudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OmV4cG9zdXJlUm93LmlzSW5pdGlhbGl6ZWQpIGV4cG9zdXJlUm93LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICBpZiAoOjppZGVudGl0eVJvdy5pc0luaXRpYWxpemVkKSBpZGVudGl0eVJvdy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6cmVwb3J0VG9vbHNSb3cuaXNJbml0aWFsaXplZCkgcmVwb3J0VG9vbHNSb3cudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OnJlcG9ydEFkdmFuY2VkUm93LmlzSW5pdGlhbGl6ZWQpIHJlcG9ydEFkdmFuY2VkUm93LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICBpZiAoOjpyZXBvcnREaXNwbGF5Um93LmlzSW5pdGlhbGl6ZWQpIHJlcG9ydERpc3BsYXlSb3cudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OnJlcG9ydE91dHB1dFJvdy5pc0luaXRpYWxpemVkKSByZXBvcnRPdXRwdXRSb3cudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OnJlcG9ydERpcmVjdG9yUm93LmlzSW5pdGlhbGl6ZWQpIHJlcG9ydERpcmVjdG9yUm93LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICBpZiAoOjpzZXR0aW5nc1N1bW1hcnlWaWV3LmlzSW5pdGlhbGl6ZWQpIHNldHRpbmdzU3VtbWFyeVZpZXcudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OnByZXZpZXdOYXJyYXRpb25QYW5lbC5pc0luaXRpYWxpemVkKSBwcmV2aWV3TmFycmF0aW9uUGFuZWwudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OmJyYW5kVmlldy5pc0luaXRpYWxpemVkKSBicmFuZFZpZXcudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OnN0YXR1c1ZpZXcuaXNJbml0aWFsaXplZCkgc3RhdHVzVmlldy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6dGltZWNvZGVWaWV3LmlzSW5pdGlhbGl6ZWQpIHRpbWVjb2RlVmlldy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6Zm9ybWF0Vmlldy5pc0luaXRpYWxpemVkKSBmb3JtYXRWaWV3LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICBpZiAoOjpsb2NhdGlvblZpZXcuaXNJbml0aWFsaXplZCkgbG9jYXRpb25WaWV3LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICBpZiAoOjp3ZWF0aGVyVmlldy5pc0luaXRpYWxpemVkKSB3ZWF0aGVyVmlldy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6c3lzdGVtVmlldy5pc0luaXRpYWxpemVkKSBzeXN0ZW1WaWV3LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICBpZiAoOjpob3Jpem9uR3VhcmRWaWV3LmlzSW5pdGlhbGl6ZWQpIGhvcml6b25HdWFyZFZpZXcudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6Om1vdGlvbkd1YXJkVmlldy5pc0luaXRpYWxpemVkKSBtb3Rpb25HdWFyZFZpZXcudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OmxpZ2h0QWR2aXNvclZpZXcuaXNJbml0aWFsaXplZCkgbGlnaHRBZHZpc29yVmlldy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6YXVkaW9HdWFyZFZpZXcuaXNJbml0aWFsaXplZCkgYXVkaW9HdWFyZFZpZXcudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OnRoZXJtYWxHdWFyZFZpZXcuaXNJbml0aWFsaXplZCkgdGhlcm1hbEd1YXJkVmlldy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6djI1NU1vbml0b3JWaWV3LmlzSW5pdGlhbGl6ZWQpIHYyNTVNb25pdG9yVmlldy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6c2hvdEFzc2lzdFZpZXcuaXNJbml0aWFsaXplZCkgc2hvdEFzc2lzdFZpZXcudmlzaWJpbGl0eSA9IFZpZXcuR09ORQogICAgICAgIGlmICg6OmRpcmVjdG9yT3ZlcmxheVZpZXcuaXNJbml0aWFsaXplZCkgZGlyZWN0b3JPdmVybGF5Vmlldy52aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICAgICAgaWYgKDo6Z3VpZGVzVmlldy5pc0luaXRpYWxpemVkKSBndWlkZXNWaWV3LnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgIH0KJycnCnM9cy5yZXBsYWNlKG5lZWRsZSxjbGVhbiwxKTsgYS53cml0ZV90ZXh0KHMpCng9Yi5yZWFkX3RleHQoKTsgeD14LnJlcGxhY2UoJ3Zpc2liaWxpdHkgPSBpZiAocHJlZnMuZ2V0Qm9vbGVhbigiZ3VpZGVzIiwgZmFsc2UpKSBWaWV3LlZJU0lCTEUgZWxzZSBWaWV3LkdPTkUnLCd2aXNpYmlsaXR5ID0gVmlldy5HT05FJywxKQpvbGQ9JycnICAgICAgICAgICAgbGlzdE9mKGNsZWFuQnV0dG9uLCBsb2NrQnV0dG9uLCBtYXJrQnV0dG9uLCBndWlkZUJ1dHRvbiwgaGFuZEJ1dHRvbiwgbmlnaHRCdXR0b24sIGRpbUJ1dHRvbikuZm9yRWFjaCB7CiAgICAgICAgICAgICAgICBjb250cm9sUmFpbC5hZGRWaWV3KGl0LCBMaW5lYXJMYXlvdXQuTGF5b3V0UGFyYW1zKHVuaXQoKSAqIDExLCB1bml0KCkgKiA2KS5hcHBseSB7CiAgICAgICAgICAgICAgICAgICAgYm90dG9tTWFyZ2luID0gdW5pdCgpCiAgICAgICAgICAgICAgICB9KQogICAgICAgICAgICB9CiAgICAgICAgICAgIHJvb3QuYWRkVmlldyhjb250cm9sUmFpbCkKICAgICAgICAgICAgcGxhY2VSYWlsKCkKJycnCmlmIG9sZCBub3QgaW4geDogcmFpc2UgU3lzdGVtRXhpdCgnUjkgU09VUkNFIENPTlRSQUNUIE1JU1NJTkc6IGJyb2FkY2FzdCBsZWdhY3kgcmFpbCcpCng9eC5yZXBsYWNlKG9sZCwnICAgICAgICAgICAgLy8gU0VDVElPTjEtUjk6IGxlZ2FjeSBicm9hZGNhc3QgcmFpbCBub3QgbW91bnRlZC5cbiAgICAgICAgICAgIGNvbnRyb2xSYWlsLnZpc2liaWxpdHkgPSBWaWV3LkdPTkVcbicsMSk7IGIud3JpdGVfdGV4dCh4KQo=' | base64 -d > /tmp/r9_patch.py
+          python3 /tmp/r9_patch.py "$A" "$B"
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'SECTION1-R9-CLEAR-UI' "$A"
+          ! grep -q 'root.addView(controlRail)' "$B"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+      - name: Verify protected source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          P="app/src/main/java/com/sentongoharuna/pulse"
+          grep -q 'tag = "f12_status_strip"' "$P/DevelopUgandaFivemods12FieldUi.kt"
+          grep -q 'recordButton.setOnTouchListener' "$P/DevelopUgandaCameraActivity.kt"
+      - name: Unit tests and APK build
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          OUT="SECTION1-R9-CLEAR-UI-REAL-SOURCE-${{ github.run_number }}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-SECTION1-R9-CLEAR-UI-REAL-SOURCE-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
