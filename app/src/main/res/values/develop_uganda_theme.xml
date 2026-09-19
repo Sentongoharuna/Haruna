@@ -1,0 +1,68 @@
+<resources>
+    <!--
+        Develop Uganda presentation token source of truth.
+
+        EXCLUSION — do not route recorded-image or creative-look values,
+        Color Tuner/Engine values, Interview or Video Tag burn-in values,
+        live-preview tints, or V244/V255 monitor-analysis colours through
+        du_ tokens. They are output, creative, or analysis semantics, not
+        application chrome, and remain byte-for-byte local until a separately
+        approved rendering pass.
+    -->
+
+    <!-- Approved FIVEMODS 8 chrome palette: nine colours plus transparent. -->
+    <color name="du_surface">#031829</color>
+    <color name="du_surface_raised">#092236</color>
+    <color name="du_content">#F1F3F8</color>
+    <color name="du_content_dim">#AEB7C7</color>
+    <color name="du_accent">#D0B06F</color>
+    <!-- Mode identity only: never use these for preview, analysis or recorded pixels. -->
+    <color name="du_mode_main">#D0B06F</color>
+    <color name="du_mode_live">#7FAFC9</color>
+    <color name="du_mode_tiktok">#BE9250</color>
+    <color name="du_mode_status">#9BB7C5</color>
+    <color name="du_mode_interview">#E0C98F</color>
+    <color name="du_outline">#456983</color>
+    <color name="du_record">#F15252</color>
+    <color name="du_warning">#FF8A00</color>
+    <color name="du_system_chrome">#02070B</color>
+    <color name="du_transparent">#00000000</color>
+
+    <!-- Local backing for indicators drawn over the live viewfinder. -->
+    <color name="du_viewfinder_indicator_backing">#CC031829</color>
+
+    <!-- Applied chrome type scale. -->
+    <style name="du_type_11">
+        <item name="android:textSize">11sp</item>
+    </style>
+    <style name="du_type_12">
+        <item name="android:textSize">12sp</item>
+    </style>
+    <style name="du_type_13">
+        <item name="android:textSize">13sp</item>
+    </style>
+    <style name="du_type_14">
+        <item name="android:textSize">14sp</item>
+    </style>
+    <style name="du_type_16">
+        <item name="android:textSize">16sp</item>
+    </style>
+    <style name="du_type_20">
+        <item name="android:textSize">20sp</item>
+    </style>
+    <style name="du_type_22">
+        <item name="android:textSize">22sp</item>
+    </style>
+    <style name="du_type_40">
+        <item name="android:textSize">40sp</item>
+    </style>
+
+    <!-- Applied chrome spacing, touch and radius tokens. -->
+    <dimen name="du_spacing_unit">8dp</dimen>
+    <dimen name="du_touch_minimum">48dp</dimen>
+    <dimen name="du_radius">2dp</dimen>
+
+    <!-- Applied chrome motion token. -->
+    <integer name="du_motion_fast_out_slow_in_duration">160</integer>
+    <item type="interpolator" name="du_motion_fast_out_slow_in">@android:interpolator/fast_out_slow_in</item>
+</resources>

@@ -1,0 +1,40 @@
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:navigationBarColor">@color/du_system_chrome</item>
+        <item name="android:statusBarColor">@color/du_system_chrome</item>
+        <item name="android:colorAccent">@color/du_accent</item>
+        <item name="alertDialogTheme">@style/DUAlertDialogTheme</item>
+        <item name="android:alertDialogTheme">@style/DUAlertDialogTheme</item>
+    </style>
+
+    <style name="DUAlertDialogTheme" parent="ThemeOverlay.AppCompat.Dialog.Alert">
+        <item name="colorAccent">@color/du_accent</item>
+        <item name="android:colorAccent">@color/du_accent</item>
+        <item name="android:windowBackground">@color/du_surface_raised</item>
+        <item name="buttonBarPositiveButtonStyle">@style/DUDialogAction</item>
+        <item name="buttonBarNegativeButtonStyle">@style/DUDialogAction</item>
+        <item name="buttonBarNeutralButtonStyle">@style/DUDialogAction</item>
+        <item name="android:textAppearanceLarge">@style/DUDialogTitle</item>
+        <item name="android:textAppearanceMedium">@style/DUDialogBody</item>
+        <item name="android:textAppearanceSmall">@style/DUDialogBody</item>
+    </style>
+
+    <style name="DUDialogTitle" parent="TextAppearance.AppCompat.Title">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/du_content</item>
+    </style>
+
+    <style name="DUDialogBody" parent="TextAppearance.AppCompat.Body1">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/du_content</item>
+    </style>
+
+    <style name="DUDialogAction" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/du_accent</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:minHeight">40dp</item>
+    </style>
+</resources>
