@@ -1,0 +1,77 @@
+name: 00 - MATERIALIZE FIVEMODS 12 SOURCE
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Extract pinned source and prove equivalence
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="00-1-FIVEMODS12-RUN4-SOURCE.zip"
+          test -s "$archive"
+          rm -rf _materialize
+          mkdir _materialize
+          unzip -q "$archive" -d _materialize
+          root="$(find _materialize -type f \( -name settings.gradle -o -name settings.gradle.kts \) -printf '%h\n' | head -1)"
+          test -n "$root"
+          test -d "$root/app"
+          sha256sum "$archive" > FIVEMODS12_SOURCE_ARCHIVE.sha256
+
+          cp -a "$root/app" ./
+          for f in settings.gradle settings.gradle.kts build.gradle build.gradle.kts gradle.properties; do
+            [ -e "$root/$f" ] && cp -a "$root/$f" ./
+          done
+          [ -d "$root/gradle" ] && cp -a "$root/gradle" ./
+          [ -f "$root/gradlew" ] && cp -a "$root/gradlew" ./ && chmod +x gradlew
+          [ -f "$root/gradlew.bat" ] && cp -a "$root/gradlew.bat" ./
+          [ -d "$root/ci" ] && cp -a "$root/ci" ./
+
+          python3 - "$root" <<'PY'
+          import hashlib,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          rels=[]
+          for d in ("app","gradle","ci"):
+              q=root/d
+              if q.exists(): rels += [x.relative_to(root) for x in q.rglob("*") if x.is_file()]
+          for n in ("settings.gradle","settings.gradle.kts","build.gradle","build.gradle.kts","gradle.properties","gradlew","gradlew.bat"):
+              if (root/n).is_file(): rels.append(pathlib.Path(n))
+          def h(p):
+              z=hashlib.sha256()
+              with open(p,"rb") as f:
+                  for b in iter(lambda:f.read(1048576),b""): z.update(b)
+              return z.hexdigest()
+          rows=[]; bad=[]
+          for rel in sorted(set(rels),key=str):
+              a=root/rel; b=pathlib.Path(rel)
+              if not b.is_file() or h(a)!=h(b): bad.append(str(rel))
+              else: rows.append(f"{h(a)}  {rel}")
+          pathlib.Path("FIVEMODS12_SOURCE_EQUIVALENCE.sha256").write_text("\n".join(rows)+"\n")
+          if bad: raise SystemExit("equivalence failed: "+", ".join(bad[:20]))
+          print("equivalent files:",len(rows))
+          PY
+          rm -rf _materialize
+
+      - name: Commit ordinary source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A app gradle ci FIVEMODS12_SOURCE_ARCHIVE.sha256 FIVEMODS12_SOURCE_EQUIVALENCE.sha256 2>/dev/null || true
+          for f in settings.gradle settings.gradle.kts build.gradle build.gradle.kts gradle.properties gradlew gradlew.bat; do
+            [ -e "$f" ] && git add "$f"
+          done
+          git diff --cached --quiet && { echo "Ordinary source already materialized."; exit 0; }
+          git commit -m "Materialize FIVEMODS 12 ordinary source with equivalence hashes"
+          git push origin HEAD:main
