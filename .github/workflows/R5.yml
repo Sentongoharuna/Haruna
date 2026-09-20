@@ -1,0 +1,433 @@
+name: R5 - BOTTOM ICONS + RED REC GLOW
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [".github/workflows/R5.yml"]
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore exact proven R9 clean base
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://raw.githubusercontent.com/Sentongoharuna/Haruna/8883a1402fb10bb2234b8e3f7cf1a7a26609b533/.github/workflows/00-SECTION1-R9-CLEAR-UI-REAL-SOURCE.yml"
+          curl --fail --location --retry 3 --connect-timeout 15 "$URL" -o /tmp/proven-r9.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,base64
+          y=Path("/tmp/proven-r9.yml").read_text()
+          m=re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d > /tmp/r9_patch.py",y)
+          if not m: raise SystemExit("PROVEN R9 PATCH PAYLOAD NOT FOUND")
+          Path("/tmp/r9_patch.py").write_bytes(base64.b64decode(m.group(1)))
+          PY
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          B="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          python3 /tmp/r9_patch.py "$A" "$B"
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+
+      - name: Apply R9-2 R9-4 and R9-5 refinements
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          F12="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt"
+          python3 - "$A" "$F12" <<'PY'
+          from pathlib import Path
+          import sys,re
+          a=Path(sys.argv[1]); s=a.read_text()
+          f=Path(sys.argv[2]); u=f.read_text()
+
+          # R9-2: dot-only shutter.
+          s=s.replace('"● RECORD"','"●"').replace('"● PHOTO"','"●"')
+
+          # R9-4: compact F12 strip and suppress duplicate narration.
+          u=u.replace("setPadding(dp(6), dp(4), dp(6), dp(4))","setPadding(dp(4), dp(2), dp(4), dp(2))",1)
+          u=u.replace("LinearLayout.LayoutParams(0, dp(22), 1f)","LinearLayout.LayoutParams(0, dp(18), 1f)")
+          u=u.replace("LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(22))","LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(18))")
+          marker="        f12CameraShell?.updateBroadcastStatus(f12Status)\n"
+          if marker in s:
+              s=s.replace(marker,marker+"        if (::previewNarrationPanel.isInitialized) previewNarrationPanel.visibility = View.GONE\n",1)
+
+          # R9-5: true bare circular shutter. No rectangular backing.
+          start=s.find("    private fun makeRecordButton(): Button {")
+          end=s.find("    private fun space(width: Int): View {",start)
+          if start<0 or end<0: raise SystemExit("record button function missing")
+          b=s[start:end]
+          b=re.sub(r'minWidth = dp\(\d+\)', 'minWidth = dp(72)', b)
+          b=re.sub(r'minHeight = dp\(\d+\)', 'minHeight = dp(72)', b)
+          b=re.sub(r'minimumWidth = dp\(\d+\)', 'minimumWidth = dp(72)', b)
+          b=re.sub(r'minimumHeight = dp\(\d+\)', 'minimumHeight = dp(72)', b)
+          b=b.replace("shape = GradientDrawable.RECTANGLE","shape = GradientDrawable.OVAL")
+          b=re.sub(r'\s*cornerRadius\s*=.*\n','\n',b)
+          s=s[:start]+b+s[end:]
+
+          # Remove solid navigator backing globally only where it uses theme surface;
+          # child icons and listeners are untouched.
+          s=s.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.surface)","setBackgroundColor(DevelopUgandaFivemods8Theme.transparent)")
+          s=s.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceRaised)","setBackgroundColor(DevelopUgandaFivemods8Theme.transparent)")
+
+          a.write_text(s); f.write_text(u)
+          PY
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+          ! grep -q '"● RECORD"' "$A"
+          ! grep -q '"● PHOTO"' "$A"
+          echo "R9-5 FINAL CLEAN TRANSPORT VERIFIED"
+
+      - name: R4 preserve corrected bottom layout after R9-5
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          a=Path(sys.argv[1]); n=Path(sys.argv[2])
+          s=a.read_text(); nav=n.read_text()
+
+          # Anchor specifically inside the visible v237 action row.
+          row=s.find('tag = "v237_camera_action_row"')
+          if row < 0: raise SystemExit("R4 STOP: action-row anchor missing")
+          start=s.find("        actionRow.addView(",row)
+          end=s.find("        bottomDeck.addView(actionRow)",start)
+          if start < 0 or end < 0: raise SystemExit("R4 STOP: action-row children missing")
+          old=s[start:end]
+          if not all(x in old for x in ("lensButton","reportRecordArea","torchButton")):
+              raise SystemExit("R4 STOP: unexpected visible action row")
+
+          new = (
+              "        // R4: shutter alone above five icons.\n"
+              "        actionRow.addView(\n"
+              "            reportRecordArea,\n"
+              "            wrap(150, 62)\n"
+              "        )\n\n"
+          )
+          s=s[:start]+new+s[end:]
+
+          # R9-5 intentionally made shutter circular; change only this final geometry.
+          f0=s.find("    private fun makeRecordButton(): Button {")
+          f1=s.find("    private fun space(width: Int): View {",f0)
+          if f0 < 0 or f1 < 0: raise SystemExit("R4 STOP: makeRecordButton missing")
+          f=s[f0:f1]
+          f=f.replace("shape = GradientDrawable.OVAL","shape = GradientDrawable.RECTANGLE")
+          if "shape = GradientDrawable.RECTANGLE" not in f:
+              raise SystemExit("R4 STOP: rectangle conversion failed")
+          if "cornerRadius" not in f:
+              f=f.replace("shape = GradientDrawable.RECTANGLE",
+                          "shape = GradientDrawable.RECTANGLE\n                    cornerRadius = dp(14).toFloat()",1)
+          s=s[:f0]+f+s[f1:]
+          s=s.replace('"● RECORD"','"●"').replace('"● PHOTO"','"●"')
+
+          # Remove the navigator panel and labels, preserving five click targets and 850ms handoff.
+          pairs=[
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceScrim(240))","setBackgroundColor(Color.TRANSPARENT)"),
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.outlineScrim(53))","setBackgroundColor(Color.TRANSPARENT)"),
+            ("translationY = dp(10).toFloat()","translationY = 0f"),
+            ("setPadding(dp(8), dp(4), dp(8), dp(4))","setPadding(dp(8), 0, dp(8), 0)"),
+            ("canvas.drawText(code, width * 0.5f, height * 0.98f, codePaint)","// R4 icon only; dot retained.")
+          ]
+          for before,after in pairs:
+              if before not in nav: raise SystemExit("R4 STOP: navigator anchor missing: "+before)
+              nav=nav.replace(before,after,1)
+
+          active = '''if (active) {
+                DevelopUgandaFivemods8Theme.surfaceRaised
+            } else {
+                DevelopUgandaFivemods8Theme.transparent
+            }'''
+          if active in nav:
+              nav=nav.replace(active,"DevelopUgandaFivemods8Theme.transparent",1)
+
+          a.write_text(s); n.write_text(nav)
+          PY
+
+      - name: R4 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text(); n=Path(sys.argv[2]).read_text()
+          row=s.index('tag = "v237_camera_action_row"')
+          start=s.index("actionRow.addView(",row)
+          end=s.index("bottomDeck.addView(actionRow)",start)
+          b=s[start:end]
+          assert b.count("actionRow.addView(")==1
+          assert "reportRecordArea" in b
+          assert "lensButton" not in b
+          assert "torchButton" not in b
+          f0=s.index("private fun makeRecordButton(): Button")
+          f1=s.index("private fun space(width: Int): View",f0)
+          f=s[f0:f1]
+          assert "GradientDrawable.RECTANGLE" in f
+          assert "GradientDrawable.OVAL" not in f
+          assert "surfaceScrim(240)" not in n
+          assert "outlineScrim(53)" not in n
+          assert "canvas.drawText(code," not in n
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in n
+          print("R4 VERIFIED")
+          PY
+          ! grep -q '"● RECORD"' "$A"
+          ! grep -q '"● PHOTO"' "$A"
+
+      - name: R5 extreme-bottom icons and real recording pulse
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+
+          a=Path(sys.argv[1]); n=Path(sys.argv[2])
+          s=a.read_text(); nav=n.read_text()
+
+          # R4 moved the icon strip 10dp upward. Restore the source's proven
+          # lower offset so the five icons sit at the extreme safe bottom.
+          bottom_old="                translationY = 0f"
+          bottom_new="""                // R5: five mode icons at the extreme safe bottom.
+                          translationY = dp(10).toFloat()"""
+          if nav.count(bottom_old) != 1:
+              raise SystemExit("R5 STOP: exact R4 navigator offset missing")
+          nav=nav.replace(bottom_old,bottom_new,1)
+
+          field_anchor='    private var recordStartUtc = "--"\n'
+          if s.count(field_anchor) != 1:
+              raise SystemExit("R5 STOP: record state field anchor missing")
+          s=s.replace(
+              field_anchor,
+              field_anchor + '''
+
+              // R5 owns only the visual recording pulse; CameraX remains the truth.
+              private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null
+          ''',
+              1
+          )
+
+          helper_anchor="    private fun makeRecordButton(): Button {"
+          if s.count(helper_anchor) != 1:
+              raise SystemExit("R5 STOP: makeRecordButton anchor missing")
+          helper='''    private fun r5SetRecordPulse(recordingNow: Boolean) {
+                  if (!::recordButton.isInitialized) return
+          
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+                  recordButton.animate().cancel()
+                  uiHandler.removeCallbacks(v257HomeMotionRunnable)
+          
+                  recordButton.alpha = 1f
+                  recordButton.scaleX = 1f
+                  recordButton.scaleY = 1f
+                  recordButton.elevation = 0f
+                  recordButton.background = GradientDrawable().apply {
+                      shape = GradientDrawable.RECTANGLE
+                      cornerRadius = dp(14).toFloat()
+                      setColor(
+                          if (recordingNow) {
+                              DevelopUgandaFivemods8Theme.record
+                          } else {
+                              DevelopUgandaFivemods8Theme.transparent
+                          }
+                      )
+                      setStroke(
+                          dp(if (recordingNow) 3 else 2),
+                          DevelopUgandaFivemods8Theme.record
+                      )
+                  }
+                  recordButton.setTextColor(DevelopUgandaFivemods8Theme.content)
+          
+                  if (::reportRecordState.isInitialized) {
+                      reportRecordState.animate().cancel()
+                      reportRecordState.alpha = 1f
+                      reportRecordState.scaleX = 1f
+                      reportRecordState.scaleY = 1f
+                      reportRecordState.setRecordingState(recordingNow)
+                  }
+          
+                  if (recordingNow) {
+                      val buttonPulse = android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                          recordButton,
+                          android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.72f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.045f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.045f)
+                      ).apply {
+                          duration = 720L
+                          repeatCount = android.animation.ValueAnimator.INFINITE
+                          repeatMode = android.animation.ValueAnimator.REVERSE
+                      }
+                      val haloPulse =
+                          if (::reportRecordState.isInitialized) {
+                              android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                                  reportRecordState,
+                                  android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.38f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.08f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.08f)
+                              ).apply {
+                                  duration = 720L
+                                  repeatCount = android.animation.ValueAnimator.INFINITE
+                                  repeatMode = android.animation.ValueAnimator.REVERSE
+                              }
+                          } else {
+                              null
+                          }
+                      r5RecordPulseAnimator = android.animation.AnimatorSet().apply {
+                          if (haloPulse == null) playTogether(buttonPulse) else playTogether(buttonPulse, haloPulse)
+                          start()
+                      }
+                  } else {
+                      v257UpdateHomeMotionLoop()
+                  }
+              }
+          
+          '''
+          s=s.replace(helper_anchor,helper+helper_anchor,1)
+
+          start_old='''                            recordButton.text = "■ STOP"
+                                      recordButton.isEnabled = true'''
+          start_new='''                            recordButton.text = "■ STOP"
+                                      // Actual CameraX Start event owns the red pulse.
+                                      r5SetRecordPulse(true)
+                                      recordButton.isEnabled = true'''
+          if s.count(start_old) != 1:
+              raise SystemExit("R5 STOP: CameraX Start UI anchor missing")
+          s=s.replace(start_old,start_new,1)
+
+          finalize_old='''                            recording = null
+                                      recordButton.text = "●"
+                                      recordButton.isEnabled = true'''
+          finalize_new='''                            recording = null
+                                      r5SetRecordPulse(false)
+                                      recordButton.text = "●"
+                                      recordButton.isEnabled = true'''
+          if s.count(finalize_old) != 1:
+              raise SystemExit("R5 STOP: CameraX Finalize UI anchor missing")
+          s=s.replace(finalize_old,finalize_new,1)
+
+          ready_old='''                reportRecordState.setRecordingState(
+                              false
+                          )
+                      }
+
+                      refreshHud()'''
+          ready_new='''                reportRecordState.setRecordingState(
+                              false
+                          )
+                      }
+                      r5SetRecordPulse(false)
+
+                      refreshHud()'''
+          if s.count(ready_old) != 1:
+              raise SystemExit("R5 STOP: camera-ready idle anchor missing")
+          s=s.replace(ready_old,ready_new,1)
+
+          failure_old='''            recording = null
+                      recorderCoreFailure("START", failure)
+                      recordButton.text = "●"
+                      recordButton.isEnabled = true'''
+          failure_new='''            recording = null
+                      recorderCoreFailure("START", failure)
+                      r5SetRecordPulse(false)
+                      recordButton.text = "●"
+                      recordButton.isEnabled = true'''
+          if s.count(failure_old) != 1:
+              raise SystemExit("R5 STOP: recording-start failure anchor missing")
+          s=s.replace(failure_old,failure_new,1)
+
+          destroy_old='''        uiHandler.removeCallbacksAndMessages(
+                      null
+                  )
+
+                  if ('''
+          destroy_new='''        uiHandler.removeCallbacksAndMessages(
+                      null
+                  )
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+
+                  if ('''
+          if s.count(destroy_old) != 1:
+              raise SystemExit("R5 STOP: onDestroy cleanup anchor missing")
+          s=s.replace(destroy_old,destroy_new,1)
+
+          a.write_text(s); n.write_text(nav)
+          PY
+
+      - name: R5 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text(); nav=Path(sys.argv[2]).read_text()
+          assert "R5: five mode icons at the extreme safe bottom" in nav
+          assert "translationY = dp(10).toFloat()" in nav
+          assert "private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null" in s
+          assert "private fun r5SetRecordPulse(recordingNow: Boolean)" in s
+          assert "setColor(\n                if (recordingNow)" in s
+          assert "DevelopUgandaFivemods8Theme.record" in s
+          assert "Actual CameraX Start event owns the red pulse" in s
+          assert s.count("r5SetRecordPulse(true)") == 1
+          assert s.count("r5SetRecordPulse(false)") >= 3
+          assert "repeatCount = android.animation.ValueAnimator.INFINITE" in s
+          assert "r5RecordPulseAnimator?.cancel()" in s
+          start=s.index("is VideoRecordEvent.Start")
+          final=s.index("is VideoRecordEvent.Finalize")
+          assert start < s.index("r5SetRecordPulse(true)",start) < final
+          assert s.index("r5SetRecordPulse(false)",final) > final
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in nav
+          print("R5 VERIFIED • EXTREME BOTTOM • REAL START RED PULSE")
+          PY
+
+      - name: Verify protected contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          grep -q 'tag = "f12_status_strip"' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt
+          grep -q 'recordButton.setOnTouchListener' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+
+      - name: Unit tests and APK build
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="R5-BOTTOM-ICONS-RED-REC-GLOW-${GITHUB_RUN_NUMBER}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R5-BOTTOM-ICONS-RED-REC-GLOW-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
