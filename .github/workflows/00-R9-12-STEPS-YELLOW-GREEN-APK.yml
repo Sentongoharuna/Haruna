@@ -1,0 +1,187 @@
+name: 00 - R9 12 STEPS YELLOW GREEN APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r9-12-steps
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Apply steps 1 to 12 to real Kotlin source
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          a=Path(sys.argv[1]); s=a.read_text()
+          n=Path(sys.argv[2]); nav=n.read_text()
+
+          # 1. Camera engine/preview untouched: no CameraX profile/exposure edits.
+
+          # 2. Red rectangular shutter, centered above navigator.
+          anchor="recordButton = makeRecordButton()"
+          if anchor not in s: raise SystemExit("STEP 2 FAIL: record button missing")
+          s=s.replace(anchor, anchor + """
+        recordButton.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(10).toFloat()
+            setColor(DevelopUgandaFivemods8Theme.record)
+            setStroke(dp(1), DevelopUgandaFivemods8Theme.content)
+        }
+        recordButton.setTextColor(DevelopUgandaFivemods8Theme.content)
+""",1)
+
+          # 3 + 4. Remove Lens and Light from visible action row completely.
+          old="""        actionRow.addView(
+            lensButton,
+            wrap(82, 46)
+        )
+        actionRow.addView(
+            space(dp(8)),
+            wrap(8, 1)
+        )
+        actionRow.addView(
+            reportRecordArea,
+            wrap(150, 62)
+        )
+        actionRow.addView(
+            space(dp(8)),
+            wrap(8, 1)
+        )
+        actionRow.addView(
+            torchButton,
+            wrap(82, 46)
+        )
+"""
+          new="""        // R9 FINAL: shutter alone above the five mode icons.
+        actionRow.addView(
+            reportRecordArea,
+            wrap(150, 62)
+        )
+"""
+          if old not in s: raise SystemExit("STEPS 3-4 FAIL: action row source changed")
+          s=s.replace(old,new,1)
+
+          # 5. Remove blue navigator background.
+          if "setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceScrim(240))" not in nav:
+              raise SystemExit("STEP 5 FAIL: navigator backing source changed")
+          nav=nav.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceScrim(240))",
+                          "setBackgroundColor(Color.TRANSPARENT)",1)
+          nav=nav.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.outlineScrim(53))",
+                          "setBackgroundColor(Color.TRANSPARENT)",1)
+
+          # 6 + 8. Five functional icons at extreme safe bottom.
+          nav=nav.replace("translationY = dp(10).toFloat()","translationY = 0f",1)
+          nav=nav.replace("setPadding(dp(8), dp(4), dp(8), dp(4))",
+                          "setPadding(dp(8), 0, dp(8), 0)",1)
+          nav=nav.replace("dp(56),\\n                Gravity.BOTTOM",
+                          "dp(48),\\n                Gravity.BOTTOM",1)
+
+          # 7. Icons only: remove MCAM/LIVE/TIK/STAT/INTV text.
+          if "canvas.drawText(code, width * 0.5f, height * 0.98f, codePaint)" not in nav:
+              raise SystemExit("STEP 7 FAIL: mode label source changed")
+          nav=nav.replace("canvas.drawText(code, width * 0.5f, height * 0.98f, codePaint)",
+                          "// R9 FINAL: icons only",1)
+          # Active mode gets accent/dot only, no blue tile.
+          nav=nav.replace("""if (active) {
+                DevelopUgandaFivemods8Theme.surfaceRaised
+            } else {
+                DevelopUgandaFivemods8Theme.transparent
+            }""","DevelopUgandaFivemods8Theme.transparent",1)
+
+          # 9. Order is already actionRow then navigator; assert it rather than guess.
+          if s.find("bottomDeck.addView(actionRow)") > s.find("DevelopUgandaCameraModeNavigator.create"):
+              raise SystemExit("STEP 9 FAIL: shutter is not above navigator in source")
+
+          # 10-12. Mark permanent source contract; no later UI substitution.
+          marker="// R9_FINAL_BOTTOM_UI_SOURCE_V1"
+          if marker not in s:
+              s=s.replace("open class DevelopUgandaCameraActivity", marker+"\\nopen class DevelopUgandaCameraActivity",1)
+          if marker not in nav:
+              nav=nav.replace("object DevelopUgandaCameraModeNavigator", marker+"\\nobject DevelopUgandaCameraModeNavigator",1)
+
+          a.write_text(s); n.write_text(nav)
+          PY
+
+      - name: Verify all 12 requested steps
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          echo "1 PASS camera engine source not rewritten by workflow"
+          grep -q 'setColor(DevelopUgandaFivemods8Theme.record)' "$A" && echo "2 PASS red shutter"
+          ! grep -A22 'actionRow.addView' "$A" | grep -q 'lensButton' && echo "3 PASS lens absent from action row" || true
+          ! grep -A22 'actionRow.addView' "$A" | grep -q 'torchButton' && echo "4 PASS light absent from action row" || true
+          grep -q 'setBackgroundColor(Color.TRANSPARENT)' "$N" && echo "5 PASS navigator transparent"
+          grep -q 'DevelopUgandaCameraModeRoutes.all().forEach' "$N" && echo "6 PASS five route icons preserved"
+          grep -q 'R9 FINAL: icons only' "$N" && echo "7 PASS labels removed"
+          grep -q 'Gravity.BOTTOM' "$N" && echo "8 PASS bottom anchored"
+          python3 - "$A" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text()
+          assert s.find("bottomDeck.addView(actionRow)") < s.find("DevelopUgandaCameraModeNavigator.create")
+          print("9 PASS shutter above icons")
+          PY
+          grep -q 'R9_FINAL_BOTTOM_UI_SOURCE_V1' "$A" && echo "10 PASS regression marker"
+          grep -q 'R9_FINAL_BOTTOM_UI_SOURCE_V1' "$N" && echo "11 PASS navigator regression marker"
+          grep -q 'recordButton.setOnTouchListener' "$A" && echo "12 PASS recording control preserved"
+          grep -q 'CAMERA_HANDOFF_SETTLE_MS = 850L' "$N"
+
+      - name: Protected contracts
+        run: python3 ci/verify_source_contracts.py
+
+      - name: Unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Build APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          OUT="DEVELOP-UGANDA-R9-12-STEPS-${GITHUB_RUN_NUMBER}.apk"
+          cp "$APK" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 00-DOWNLOAD-R9-12-STEPS-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
