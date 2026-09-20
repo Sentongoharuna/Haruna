@@ -1,0 +1,680 @@
+name: R7 - SECTION 2 CAPABILITY FALLBACK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [".github/workflows/R7.yml"]
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore exact proven R9 clean base
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://raw.githubusercontent.com/Sentongoharuna/Haruna/8883a1402fb10bb2234b8e3f7cf1a7a26609b533/.github/workflows/00-SECTION1-R9-CLEAR-UI-REAL-SOURCE.yml"
+          curl --fail --location --retry 3 --connect-timeout 15 "$URL" -o /tmp/proven-r9.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,base64
+          y=Path("/tmp/proven-r9.yml").read_text()
+          m=re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d > /tmp/r9_patch.py",y)
+          if not m: raise SystemExit("PROVEN R9 PATCH PAYLOAD NOT FOUND")
+          Path("/tmp/r9_patch.py").write_bytes(base64.b64decode(m.group(1)))
+          PY
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          B="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          python3 /tmp/r9_patch.py "$A" "$B"
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+
+      - name: Apply R9-2 R9-4 and R9-5 refinements
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          F12="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt"
+          python3 - "$A" "$F12" <<'PY'
+          from pathlib import Path
+          import sys,re
+          a=Path(sys.argv[1]); s=a.read_text()
+          f=Path(sys.argv[2]); u=f.read_text()
+
+          # R9-2: dot-only shutter.
+          s=s.replace('"● RECORD"','"●"').replace('"● PHOTO"','"●"')
+
+          # R9-4: compact F12 strip and suppress duplicate narration.
+          u=u.replace("setPadding(dp(6), dp(4), dp(6), dp(4))","setPadding(dp(4), dp(2), dp(4), dp(2))",1)
+          u=u.replace("LinearLayout.LayoutParams(0, dp(22), 1f)","LinearLayout.LayoutParams(0, dp(18), 1f)")
+          u=u.replace("LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(22))","LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(18))")
+          marker="        f12CameraShell?.updateBroadcastStatus(f12Status)\n"
+          if marker in s:
+              s=s.replace(marker,marker+"        if (::previewNarrationPanel.isInitialized) previewNarrationPanel.visibility = View.GONE\n",1)
+
+          # R9-5: true bare circular shutter. No rectangular backing.
+          start=s.find("    private fun makeRecordButton(): Button {")
+          end=s.find("    private fun space(width: Int): View {",start)
+          if start<0 or end<0: raise SystemExit("record button function missing")
+          b=s[start:end]
+          b=re.sub(r'minWidth = dp\(\d+\)', 'minWidth = dp(72)', b)
+          b=re.sub(r'minHeight = dp\(\d+\)', 'minHeight = dp(72)', b)
+          b=re.sub(r'minimumWidth = dp\(\d+\)', 'minimumWidth = dp(72)', b)
+          b=re.sub(r'minimumHeight = dp\(\d+\)', 'minimumHeight = dp(72)', b)
+          b=b.replace("shape = GradientDrawable.RECTANGLE","shape = GradientDrawable.OVAL")
+          b=re.sub(r'\s*cornerRadius\s*=.*\n','\n',b)
+          s=s[:start]+b+s[end:]
+
+          # Remove solid navigator backing globally only where it uses theme surface;
+          # child icons and listeners are untouched.
+          s=s.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.surface)","setBackgroundColor(DevelopUgandaFivemods8Theme.transparent)")
+          s=s.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceRaised)","setBackgroundColor(DevelopUgandaFivemods8Theme.transparent)")
+
+          a.write_text(s); f.write_text(u)
+          PY
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+          ! grep -q '"● RECORD"' "$A"
+          ! grep -q '"● PHOTO"' "$A"
+          echo "R9-5 FINAL CLEAN TRANSPORT VERIFIED"
+
+      - name: R4 preserve corrected bottom layout after R9-5
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          a=Path(sys.argv[1]); n=Path(sys.argv[2])
+          s=a.read_text(); nav=n.read_text()
+
+          # Anchor specifically inside the visible v237 action row.
+          row=s.find('tag = "v237_camera_action_row"')
+          if row < 0: raise SystemExit("R4 STOP: action-row anchor missing")
+          start=s.find("        actionRow.addView(",row)
+          end=s.find("        bottomDeck.addView(actionRow)",start)
+          if start < 0 or end < 0: raise SystemExit("R4 STOP: action-row children missing")
+          old=s[start:end]
+          if not all(x in old for x in ("lensButton","reportRecordArea","torchButton")):
+              raise SystemExit("R4 STOP: unexpected visible action row")
+
+          new = (
+              "        // R4: shutter alone above five icons.\n"
+              "        actionRow.addView(\n"
+              "            reportRecordArea,\n"
+              "            wrap(150, 62)\n"
+              "        )\n\n"
+          )
+          s=s[:start]+new+s[end:]
+
+          # R9-5 intentionally made shutter circular; change only this final geometry.
+          f0=s.find("    private fun makeRecordButton(): Button {")
+          f1=s.find("    private fun space(width: Int): View {",f0)
+          if f0 < 0 or f1 < 0: raise SystemExit("R4 STOP: makeRecordButton missing")
+          f=s[f0:f1]
+          f=f.replace("shape = GradientDrawable.OVAL","shape = GradientDrawable.RECTANGLE")
+          if "shape = GradientDrawable.RECTANGLE" not in f:
+              raise SystemExit("R4 STOP: rectangle conversion failed")
+          if "cornerRadius" not in f:
+              f=f.replace("shape = GradientDrawable.RECTANGLE",
+                          "shape = GradientDrawable.RECTANGLE\n                    cornerRadius = dp(14).toFloat()",1)
+          s=s[:f0]+f+s[f1:]
+          s=s.replace('"● RECORD"','"●"').replace('"● PHOTO"','"●"')
+
+          # Remove the navigator panel and labels, preserving five click targets and 850ms handoff.
+          pairs=[
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceScrim(240))","setBackgroundColor(Color.TRANSPARENT)"),
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.outlineScrim(53))","setBackgroundColor(Color.TRANSPARENT)"),
+            ("translationY = dp(10).toFloat()","translationY = 0f"),
+            ("setPadding(dp(8), dp(4), dp(8), dp(4))","setPadding(dp(8), 0, dp(8), 0)"),
+            ("canvas.drawText(code, width * 0.5f, height * 0.98f, codePaint)","// R4 icon only; dot retained.")
+          ]
+          for before,after in pairs:
+              if before not in nav: raise SystemExit("R4 STOP: navigator anchor missing: "+before)
+              nav=nav.replace(before,after,1)
+
+          active = '''if (active) {
+                DevelopUgandaFivemods8Theme.surfaceRaised
+            } else {
+                DevelopUgandaFivemods8Theme.transparent
+            }'''
+          if active in nav:
+              nav=nav.replace(active,"DevelopUgandaFivemods8Theme.transparent",1)
+
+          a.write_text(s); n.write_text(nav)
+          PY
+
+      - name: R4 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text(); n=Path(sys.argv[2]).read_text()
+          row=s.index('tag = "v237_camera_action_row"')
+          start=s.index("actionRow.addView(",row)
+          end=s.index("bottomDeck.addView(actionRow)",start)
+          b=s[start:end]
+          assert b.count("actionRow.addView(")==1
+          assert "reportRecordArea" in b
+          assert "lensButton" not in b
+          assert "torchButton" not in b
+          f0=s.index("private fun makeRecordButton(): Button")
+          f1=s.index("private fun space(width: Int): View",f0)
+          f=s[f0:f1]
+          assert "GradientDrawable.RECTANGLE" in f
+          assert "GradientDrawable.OVAL" not in f
+          assert "surfaceScrim(240)" not in n
+          assert "outlineScrim(53)" not in n
+          assert "canvas.drawText(code," not in n
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in n
+          print("R4 VERIFIED")
+          PY
+          ! grep -q '"● RECORD"' "$A"
+          ! grep -q '"● PHOTO"' "$A"
+
+      - name: R5 extreme-bottom icons and real recording pulse
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+
+          a=Path(sys.argv[1]); n=Path(sys.argv[2])
+          s=a.read_text(); nav=n.read_text()
+
+          # R4 moved the icon strip 10dp upward. Restore the source's proven
+          # lower offset so the five icons sit at the extreme safe bottom.
+          bottom_old="                translationY = 0f"
+          bottom_new="""                // R5: five mode icons at the extreme safe bottom.
+                          translationY = dp(10).toFloat()"""
+          if nav.count(bottom_old) != 1:
+              raise SystemExit("R5 STOP: exact R4 navigator offset missing")
+          nav=nav.replace(bottom_old,bottom_new,1)
+
+          field_anchor='    private var recordStartUtc = "--"\n'
+          if s.count(field_anchor) != 1:
+              raise SystemExit("R5 STOP: record state field anchor missing")
+          s=s.replace(
+              field_anchor,
+              field_anchor + '''
+
+              // R5 owns only the visual recording pulse; CameraX remains the truth.
+              private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null
+          ''',
+              1
+          )
+
+          helper_anchor="    private fun makeRecordButton(): Button {"
+          if s.count(helper_anchor) != 1:
+              raise SystemExit("R5 STOP: makeRecordButton anchor missing")
+          helper='''    private fun r5SetRecordPulse(recordingNow: Boolean) {
+                  if (!::recordButton.isInitialized) return
+          
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+                  recordButton.animate().cancel()
+                  uiHandler.removeCallbacks(v257HomeMotionRunnable)
+          
+                  recordButton.alpha = 1f
+                  recordButton.scaleX = 1f
+                  recordButton.scaleY = 1f
+                  recordButton.elevation = 0f
+                  recordButton.background = GradientDrawable().apply {
+                      shape = GradientDrawable.RECTANGLE
+                      cornerRadius = dp(14).toFloat()
+                      setColor(
+                          if (recordingNow) {
+                              DevelopUgandaFivemods8Theme.record
+                          } else {
+                              DevelopUgandaFivemods8Theme.transparent
+                          }
+                      )
+                      setStroke(
+                          dp(if (recordingNow) 3 else 2),
+                          DevelopUgandaFivemods8Theme.record
+                      )
+                  }
+                  recordButton.setTextColor(DevelopUgandaFivemods8Theme.content)
+          
+                  if (::reportRecordState.isInitialized) {
+                      reportRecordState.animate().cancel()
+                      reportRecordState.alpha = 1f
+                      reportRecordState.scaleX = 1f
+                      reportRecordState.scaleY = 1f
+                      reportRecordState.setRecordingState(recordingNow)
+                  }
+          
+                  if (recordingNow) {
+                      val buttonPulse = android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                          recordButton,
+                          android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.72f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.045f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.045f)
+                      ).apply {
+                          duration = 720L
+                          repeatCount = android.animation.ValueAnimator.INFINITE
+                          repeatMode = android.animation.ValueAnimator.REVERSE
+                      }
+                      val haloPulse =
+                          if (::reportRecordState.isInitialized) {
+                              android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                                  reportRecordState,
+                                  android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.38f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.08f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.08f)
+                              ).apply {
+                                  duration = 720L
+                                  repeatCount = android.animation.ValueAnimator.INFINITE
+                                  repeatMode = android.animation.ValueAnimator.REVERSE
+                              }
+                          } else {
+                              null
+                          }
+                      r5RecordPulseAnimator = android.animation.AnimatorSet().apply {
+                          if (haloPulse == null) playTogether(buttonPulse) else playTogether(buttonPulse, haloPulse)
+                          start()
+                      }
+                  } else {
+                      v257UpdateHomeMotionLoop()
+                  }
+              }
+          
+          '''
+          s=s.replace(helper_anchor,helper+helper_anchor,1)
+
+          start_old='''                            recordButton.text = "■ STOP"
+                                      recordButton.isEnabled = true'''
+          start_new='''                            recordButton.text = "■ STOP"
+                                      // Actual CameraX Start event owns the red pulse.
+                                      r5SetRecordPulse(true)
+                                      recordButton.isEnabled = true'''
+          if s.count(start_old) != 1:
+              raise SystemExit("R5 STOP: CameraX Start UI anchor missing")
+          s=s.replace(start_old,start_new,1)
+
+          finalize_old='''                            recording = null
+                                      recordButton.text = "●"
+                                      recordButton.isEnabled = true'''
+          finalize_new='''                            recording = null
+                                      r5SetRecordPulse(false)
+                                      recordButton.text = "●"
+                                      recordButton.isEnabled = true'''
+          if s.count(finalize_old) != 1:
+              raise SystemExit("R5 STOP: CameraX Finalize UI anchor missing")
+          s=s.replace(finalize_old,finalize_new,1)
+
+          ready_old='''                reportRecordState.setRecordingState(
+                              false
+                          )
+                      }
+
+                      refreshHud()'''
+          ready_new='''                reportRecordState.setRecordingState(
+                              false
+                          )
+                      }
+                      r5SetRecordPulse(false)
+
+                      refreshHud()'''
+          if s.count(ready_old) != 1:
+              raise SystemExit("R5 STOP: camera-ready idle anchor missing")
+          s=s.replace(ready_old,ready_new,1)
+
+          failure_old='''            recording = null
+                      recorderCoreFailure("START", failure)
+                      recordButton.text = "●"
+                      recordButton.isEnabled = true'''
+          failure_new='''            recording = null
+                      recorderCoreFailure("START", failure)
+                      r5SetRecordPulse(false)
+                      recordButton.text = "●"
+                      recordButton.isEnabled = true'''
+          if s.count(failure_old) != 1:
+              raise SystemExit("R5 STOP: recording-start failure anchor missing")
+          s=s.replace(failure_old,failure_new,1)
+
+          destroy_old='''        uiHandler.removeCallbacksAndMessages(
+                      null
+                  )
+
+                  if ('''
+          destroy_new='''        uiHandler.removeCallbacksAndMessages(
+                      null
+                  )
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+
+                  if ('''
+          if s.count(destroy_old) != 1:
+              raise SystemExit("R5 STOP: onDestroy cleanup anchor missing")
+          s=s.replace(destroy_old,destroy_new,1)
+
+          a.write_text(s); n.write_text(nav)
+          PY
+
+      - name: R5 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text(); nav=Path(sys.argv[2]).read_text()
+          assert "R5: five mode icons at the extreme safe bottom" in nav
+          assert "translationY = dp(10).toFloat()" in nav
+          assert "private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null" in s
+          assert "private fun r5SetRecordPulse(recordingNow: Boolean)" in s
+          assert "setColor(\n                if (recordingNow)" in s
+          assert "DevelopUgandaFivemods8Theme.record" in s
+          assert "Actual CameraX Start event owns the red pulse" in s
+          assert s.count("r5SetRecordPulse(true)") == 1
+          assert s.count("r5SetRecordPulse(false)") >= 3
+          assert "repeatCount = android.animation.ValueAnimator.INFINITE" in s
+          assert "r5RecordPulseAnimator?.cancel()" in s
+          start=s.index("is VideoRecordEvent.Start")
+          final=s.index("is VideoRecordEvent.Finalize")
+          assert start < s.index("r5SetRecordPulse(true)",start) < final
+          assert s.index("r5SetRecordPulse(false)",final) > final
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in nav
+          print("R5 VERIFIED • EXTREME BOTTOM • REAL START RED PULSE")
+          PY
+
+      - name: R6 defeat button tint and persist the recording surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          python3 - "$A" <<'PY'
+          from pathlib import Path
+          import sys
+
+          a = Path(sys.argv[1])
+          s = a.read_text()
+
+          # Android's Button theme tint was recolouring R5's custom drawable.
+          # Keep a CameraX-owned visual state and explicitly own the tint.
+          field_old = "    private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null\n"
+          field_new = field_old + "    private var r6RecordingVisualActive = false\n"
+          if s.count(field_old) != 1:
+              raise SystemExit("R6 STOP: R5 animator field missing")
+          s = s.replace(field_old, field_new, 1)
+
+          helper_start = s.find("    private fun r5SetRecordPulse(recordingNow: Boolean) {")
+          helper_end = s.find("    private fun makeRecordButton(): Button {", helper_start)
+          if helper_start < 0 or helper_end < 0:
+              raise SystemExit("R6 STOP: R5 pulse helper missing")
+
+          old_helper = s[helper_start:helper_end]
+          new_helper = '''    private fun r6ApplyRecordSurface(recordingNow: Boolean) {
+                  if (!::recordButton.isInitialized) return
+
+                  // Programmatic Android Buttons retain their theme tint unless it is
+                  // explicitly replaced. R5's red drawable was therefore rendered dark.
+                  recordButton.backgroundTintList = null
+                  recordButton.background = GradientDrawable().apply {
+                      shape = GradientDrawable.RECTANGLE
+                      cornerRadius = dp(14).toFloat()
+                      setColor(
+                          if (recordingNow) {
+                              DevelopUgandaFivemods8Theme.record
+                          } else {
+                              DevelopUgandaFivemods8Theme.transparent
+                          }
+                      )
+                      setStroke(
+                          dp(if (recordingNow) 3 else 2),
+                          DevelopUgandaFivemods8Theme.record
+                      )
+                  }
+                  recordButton.backgroundTintList =
+                      if (recordingNow) {
+                          android.content.res.ColorStateList.valueOf(
+                              DevelopUgandaFivemods8Theme.record
+                          )
+                      } else {
+                          null
+                      }
+                  recordButton.stateListAnimator = null
+                  recordButton.elevation = 0f
+                  recordButton.setTextColor(DevelopUgandaFivemods8Theme.content)
+                  recordButton.invalidate()
+              }
+
+              private fun r5SetRecordPulse(recordingNow: Boolean) {
+                  if (!::recordButton.isInitialized) return
+                  r6RecordingVisualActive = recordingNow
+
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+                  recordButton.animate().cancel()
+                  uiHandler.removeCallbacks(v257HomeMotionRunnable)
+
+                  recordButton.alpha = 1f
+                  recordButton.scaleX = 1f
+                  recordButton.scaleY = 1f
+                  r6ApplyRecordSurface(recordingNow)
+
+                  if (::reportRecordState.isInitialized) {
+                      reportRecordState.animate().cancel()
+                      reportRecordState.alpha = 1f
+                      reportRecordState.scaleX = 1f
+                      reportRecordState.scaleY = 1f
+                      reportRecordState.setRecordingState(recordingNow)
+                  }
+
+                  if (recordingNow) {
+                      val buttonPulse = android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                          recordButton,
+                          android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.72f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.045f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.045f)
+                      ).apply {
+                          duration = 720L
+                          repeatCount = android.animation.ValueAnimator.INFINITE
+                          repeatMode = android.animation.ValueAnimator.REVERSE
+                      }
+                      val haloPulse =
+                          if (::reportRecordState.isInitialized) {
+                              android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                                  reportRecordState,
+                                  android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.38f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.08f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.08f)
+                              ).apply {
+                                  duration = 720L
+                                  repeatCount = android.animation.ValueAnimator.INFINITE
+                                  repeatMode = android.animation.ValueAnimator.REVERSE
+                              }
+                          } else {
+                              null
+                          }
+                      r5RecordPulseAnimator = android.animation.AnimatorSet().apply {
+                          if (haloPulse == null) playTogether(buttonPulse) else playTogether(buttonPulse, haloPulse)
+                          start()
+                      }
+                  } else {
+                      v257UpdateHomeMotionLoop()
+                  }
+              }
+
+          '''
+          s = s[:helper_start] + new_helper + s[helper_end:]
+
+          # Clear the inherited theme tint at construction, before any recording.
+          button_anchor = "            setPadding(0, 0, 0, 0)\n            background = GradientDrawable().apply {"
+          button_replacement = "            setPadding(0, 0, 0, 0)\n            backgroundTintList = null\n            background = GradientDrawable().apply {"
+          if s.count(button_anchor) != 1:
+              raise SystemExit("R6 STOP: record button construction anchor missing")
+          s = s.replace(button_anchor, button_replacement, 1)
+
+          # HUD refresh runs every second. Reassert only the surface here; do not
+          # restart the AnimatorSet, so the pulse remains continuous.
+          refresh_anchor = '''        if (::guidesView.isInitialized) guidesView.visibility = View.GONE
+              }
+
+              internal fun v253QualityLabel(): String = qualityDeckLabel()'''
+          refresh_replacement = '''        if (::guidesView.isInitialized) guidesView.visibility = View.GONE
+                  r6ApplyRecordSurface(r6RecordingVisualActive)
+              }
+
+              internal fun v253QualityLabel(): String = qualityDeckLabel()'''
+          if s.count(refresh_anchor) != 1:
+              raise SystemExit("R6 STOP: refreshHud tail anchor missing")
+          s = s.replace(refresh_anchor, refresh_replacement, 1)
+
+          a.write_text(s)
+          PY
+
+      - name: R6 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+
+          s = Path(sys.argv[1]).read_text()
+          nav = Path(sys.argv[2]).read_text()
+          assert "private var r6RecordingVisualActive = false" in s
+          assert "private fun r6ApplyRecordSurface(recordingNow: Boolean)" in s
+          assert "recordButton.backgroundTintList = null" in s
+          assert "android.content.res.ColorStateList.valueOf(" in s
+          assert "r6RecordingVisualActive = recordingNow" in s
+          assert "r6ApplyRecordSurface(r6RecordingVisualActive)" in s
+          assert "recordButton.stateListAnimator = null" in s
+          assert "recordButton.elevation = 0f" in s
+          assert s.count("r5SetRecordPulse(true)") == 1
+          start = s.index("is VideoRecordEvent.Start")
+          final = s.index("is VideoRecordEvent.Finalize")
+          assert start < s.index("r5SetRecordPulse(true)", start) < final
+          assert "translationY = dp(10).toFloat()" in nav
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in nav
+          print("R6 VERIFIED • THEME TINT DEFEATED • RED SURFACE PERSISTENT")
+          PY
+
+      - name: R7 apply Section 2 capability fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'ZGlmZiAtLWdpdCBhL2FwcC9zcmMvYW5kcm9pZFRlc3QvamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUZpdmVNb2RlSW5zdHJ1bWVudGF0aW9uLmt0IGIvYXBwL3NyYy9hbmRyb2lkVGVzdC9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhRml2ZU1vZGVJbnN0cnVtZW50YXRpb24ua3QKaW5kZXggYjNkOTc1Yy4uZDgyM2JiZCAxMDA2NDQKLS0tIGEvYXBwL3NyYy9hbmRyb2lkVGVzdC9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhRml2ZU1vZGVJbnN0cnVtZW50YXRpb24ua3QKKysrIGIvYXBwL3NyYy9hbmRyb2lkVGVzdC9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhRml2ZU1vZGVJbnN0cnVtZW50YXRpb24ua3QKQEAgLTQ3LDYgKzQ3LDcgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUZpdmVNb2RlSW5zdHJ1bWVudGF0aW9uIDogSW5zdHJ1bWVudGF0aW9uKCkgewogICAgICAgICAgICAgImZpdmVtb2RzMTJGaWxlbmFtZVByZWZpeGVzQXJlU3RhYmxlIiB0byA6OmZpdmVtb2RzMTJGaWxlbmFtZVByZWZpeGVzQXJlU3RhYmxlLAogICAgICAgICAgICAgImZpdmVtb2RzMTJQcmVmbGlnaHRBbHdheXNSZXBvcnRzRWlnaHRIb25lc3RJdGVtcyIgdG8gOjpmaXZlbW9kczEyUHJlZmxpZ2h0QWx3YXlzUmVwb3J0c0VpZ2h0SG9uZXN0SXRlbXMsCiAgICAgICAgICAgICAiY2FtZXJhU3RhdHVzSGFzT25lT3duZXJBdExhcmdlc3RGb250U2NhbGUiIHRvIDo6Y2FtZXJhU3RhdHVzSGFzT25lT3duZXJBdExhcmdlc3RGb250U2NhbGUsCisgICAgICAgICAgICAiY2FwYWJpbGl0eUZhbGxiYWNrU3RlcHNEb3duSW5zdGVhZE9mUmVmdXNpbmciIHRvIDo6Y2FwYWJpbGl0eUZhbGxiYWNrU3RlcHNEb3duSW5zdGVhZE9mUmVmdXNpbmcsCiAgICAgICAgICkKICAgICAgICAgZ3JhbnRSdW50aW1lUGVybWlzc2lvbnMoKQogICAgICAgICBmb3IgKChuYW1lLCBib2R5KSBpbiB0ZXN0cykgewpAQCAtMzk0LDYgKzM5NSwyMCBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhRml2ZU1vZGVJbnN0cnVtZW50YXRpb24gOiBJbnN0cnVtZW50YXRpb24oKSB7CiAgICAgICAgIH0KICAgICB9CiAKKyAgICBwcml2YXRlIGZ1biBjYXBhYmlsaXR5RmFsbGJhY2tTdGVwc0Rvd25JbnN0ZWFkT2ZSZWZ1c2luZygpIHsKKyAgICAgICAgdmFsIHF1YWxpdHkgPSBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLnNlbGVjdFF1YWxpdHkoCisgICAgICAgICAgICBsaXN0T2YoYW5kcm9pZHguY2FtZXJhLnZpZGVvLlF1YWxpdHkuVUhELCBhbmRyb2lkeC5jYW1lcmEudmlkZW8uUXVhbGl0eS5GSEQpLAorICAgICAgICAgICAgbGlzdE9mKGFuZHJvaWR4LmNhbWVyYS52aWRlby5RdWFsaXR5LkZIRCwgYW5kcm9pZHguY2FtZXJhLnZpZGVvLlF1YWxpdHkuSEQpLAorICAgICAgICApCisgICAgICAgIHJlcXVpcmUocXVhbGl0eSA9PSBhbmRyb2lkeC5jYW1lcmEudmlkZW8uUXVhbGl0eS5GSEQpCisKKyAgICAgICAgdmFsIGZyYW1lUmF0ZSA9IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suc2VsZWN0RnJhbWVSYXRlKAorICAgICAgICAgICAgNjAsCisgICAgICAgICAgICBsaXN0T2YoYW5kcm9pZC51dGlsLlJhbmdlKDI0LCAzMCksIGFuZHJvaWQudXRpbC5SYW5nZSgzMCwgMzApKSwKKyAgICAgICAgKQorICAgICAgICByZXF1aXJlKGZyYW1lUmF0ZSA9PSBhbmRyb2lkLnV0aWwuUmFuZ2UoMzAsIDMwKSkKKyAgICB9CisKICAgICBwcml2YXRlIGZ1biBmaW5kVGFnZ2VkKHZpZXc6IFZpZXcsIHRhZzogU3RyaW5nKTogTGlzdDxWaWV3PiB7CiAgICAgICAgIHZhbCBmb3VuZCA9IG11dGFibGVMaXN0T2Y8Vmlldz4oKQogICAgICAgICBpZiAodmlldy50YWcgPT0gdGFnKSBmb3VuZCArPSB2aWV3CmRpZmYgLS1naXQgYS9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5Lmt0IGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eS5rdAppbmRleCBkZDRlYWYwLi4zNGI0YWIwIDEwMDY0NAotLS0gYS9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5Lmt0CisrKyBiL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkua3QKQEAgLTg0Myw2ICs4NDMsOSBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgIHByaXZhdGUgdmFyIGNvcmVEZWxpdmVyZWRQcm9maWxlTGFiZWwgPSAiREVWSUNFIEFVVE8iCiAgICAgcHJpdmF0ZSB2YXIgY29yZURlbGl2ZXJlZEJpdHJhdGVCcHMgPSAwCiAgICAgcHJpdmF0ZSB2YXIgY29yZUZvY3VzR2VuZXJhdGlvbiA9IDBMCisgICAgcHJpdmF0ZSB2YXIgcjdDYXBhYmlsaXR5U3RhdGU6IERldmVsb3BVZ2FuZGFDYXB0dXJlQ2FwYWJpbGl0eVN0YXRlPyA9IG51bGwKKyAgICBwcml2YXRlIHZhciByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2U6IGFuZHJvaWQudXRpbC5SYW5nZTxJbnQ+PyA9IG51bGwKKyAgICBwcml2YXRlIHZhciByN0ZvcmNlU2FmZVByb2ZpbGUgPSBmYWxzZQogCiAgICAgcHJpdmF0ZSB2YWwgd2VhdGhlciA9IFdlYXRoZXJSZXBvc2l0b3J5KCkKICAgICBwcml2YXRlIGxhdGVpbml0IHZhciB0ZWxlbWV0cnlSZWNvcmRlcjogVGVsZW1ldHJ5UmVjb3JkZXIKQEAgLTE0NDIsMTAgKzE0NDUsMTEgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgICAgICBpZiAoaXNJbnRlcnZpZXdDYW1lcmEoKSkgewogICAgICAgICAgICAgICAgICAgICBmOUludGVydmlld0ZyYW1lUmF0ZVJhbmdlKGNhbS5jYW1lcmFJbmZvKQogICAgICAgICAgICAgICAgIH0gZWxzZSBpZiAocmVxdWVzdGVkRnBzID4gMCkgewotICAgICAgICAgICAgICAgICAgICBmcHNSYW5nZXMKLSAgICAgICAgICAgICAgICAgICAgICAgIC5maWx0ZXIgeyBpdC51cHBlciA+PSByZXF1ZXN0ZWRGcHMgfQotICAgICAgICAgICAgICAgICAgICAgICAgLm1pbkJ5T3JOdWxsIHsgaXQudXBwZXIgLSByZXF1ZXN0ZWRGcHMgfQotICAgICAgICAgICAgICAgICAgICAgICAgPzogZnBzUmFuZ2VzLm1heEJ5T3JOdWxsIHsgaXQudXBwZXIgfQorICAgICAgICAgICAgICAgICAgICByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2UKKyAgICAgICAgICAgICAgICAgICAgICAgID86IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suc2VsZWN0RnJhbWVSYXRlKAorICAgICAgICAgICAgICAgICAgICAgICAgICAgIHJlcXVlc3RlZEZwcywKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICBmcHNSYW5nZXMudG9MaXN0KCksCisgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgICAgICAgICAgbnVsbAogICAgICAgICAgICAgICAgIH0KQEAgLTEwMTkxLDEwICsxMDE5NSwxMCBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgIC8vIENhbWVyYTIgQUUuIE5ldmVyIGNob29zZSBhIGZhc3RlciByYW5nZSBtZXJlbHkgYmVjYXVzZSBpdCBpcyBsaXN0ZWQgZmlyc3QuCiAgICAgcHJpdmF0ZSBmdW4gZjlJbnRlcnZpZXdGcmFtZVJhdGVSYW5nZShpbmZvOiBhbmRyb2lkeC5jYW1lcmEuY29yZS5DYW1lcmFJbmZvPyk6IGFuZHJvaWQudXRpbC5SYW5nZTxJbnQ+PyB7CiAgICAgICAgIGlmICghaXNJbnRlcnZpZXdDYW1lcmEoKSB8fCBpbmZvID09IG51bGwpIHJldHVybiBudWxsCi0gICAgICAgIHZhbCB0YXJnZXQgPSByZXF1ZXN0ZWRWaWRlb0ZwcygpCi0gICAgICAgIHJldHVybiBpbmZvLnN1cHBvcnRlZEZyYW1lUmF0ZVJhbmdlcwotICAgICAgICAgICAgLmZpbHRlciB7IGl0LnVwcGVyID09IHRhcmdldCB9Ci0gICAgICAgICAgICAubWluQnlPck51bGwgeyBpdC5sb3dlciB9CisgICAgICAgIHJldHVybiBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLnNlbGVjdEZyYW1lUmF0ZSgKKyAgICAgICAgICAgIHJlcXVlc3RlZFZpZGVvRnBzKCksCisgICAgICAgICAgICBpbmZvLnN1cHBvcnRlZEZyYW1lUmF0ZVJhbmdlcywKKyAgICAgICAgKQogICAgIH0KIAogICAgIHByaXZhdGUgZnVuIGY5QXR0YWNoQ2FwdHVyZVRlbGVtZXRyeShwcmV2aWV3QnVpbGRlcjogUHJldmlldy5CdWlsZGVyKSB7CkBAIC0xMDYwNSwyMyArMTA2MDksMTcgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKIAogICAgICAgICBvdmVybGF5RWZmZWN0ID0gbnVsbAogCi0gICAgICAgIGlmICgKLSAgICAgICAgICAgIHNlbGVjdGVkQ2FtZXJhRGV2aWNlSWQgIT0gbnVsbCAmJgotICAgICAgICAgICAgIURldmVsb3BVZ2FuZGFMZW5zSW50ZWxsaWdlbmNlLmhhc0NhbWVyYSgKLSAgICAgICAgICAgICAgICBwLAotICAgICAgICAgICAgICAgIHNlbGVjdGVkQ2FtZXJhRGV2aWNlSWQKLSAgICAgICAgICAgICkKLSAgICAgICAgKSB7Ci0gICAgICAgICAgICBzZWxlY3RlZENhbWVyYURldmljZUlkID0KLSAgICAgICAgICAgICAgICBudWxsCi0gICAgICAgIH0KLQotICAgICAgICB2YWwgc2VsZWN0b3IgPQotICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYUxlbnNJbnRlbGxpZ2VuY2Uuc2VsZWN0b3JGb3IoCisgICAgICAgIHZhbCBsZW5zU2VsZWN0aW9uID0KKyAgICAgICAgICAgIERldmVsb3BVZ2FuZGFMZW5zSW50ZWxsaWdlbmNlLnNlbGVjdGlvbkZvcigKICAgICAgICAgICAgICAgICBwLAogICAgICAgICAgICAgICAgIHNlbGVjdGVkQ2FtZXJhRGV2aWNlSWQsCi0gICAgICAgICAgICAgICAgdXNlRnJvbnQKKyAgICAgICAgICAgICAgICB1c2VGcm9udCwKICAgICAgICAgICAgICkKKyAgICAgICAgaWYgKGxlbnNTZWxlY3Rpb24uZmFsbGJhY2tBcHBsaWVkICYmIHNlbGVjdGVkQ2FtZXJhRGV2aWNlSWQgIT0gbnVsbCkgeworICAgICAgICAgICAgc2VsZWN0ZWRDYW1lcmFEZXZpY2VJZCA9IG51bGwKKyAgICAgICAgICAgIHNhdmVSZXBvcnRDYW1lcmFQcmVmZXJlbmNlcygpCisgICAgICAgIH0KKyAgICAgICAgdmFsIHNlbGVjdG9yID0gbGVuc1NlbGVjdGlvbi5zZWxlY3RvcgogCiAgICAgICAgIHZhbCBzZWxlY3RlZENhbWVyYUluZm8gPQogICAgICAgICAgICAgdHJ5IHsKQEAgLTEwNjM1LDcgKzEwNjMzLDcgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgLy8gQSByZWNvdmVyZWQgaW50ZXJydXB0ZWQgc2Vzc2lvbiBzdGFydHMgc2FmZWx5IGluIEhEIHJhdGhlciB0aGFuCiAgICAgICAgIC8vIGF0dGVtcHRpbmcgdGhlIHByZXZpb3VzIGhpZ2gtZGVtYW5kIHByb2ZpbGUgYWdhaW4uCiAgICAgICAgIHZhbCByZWNvdmVyeVNhZmVQcm9maWxlID0KLSAgICAgICAgICAgIHJ1bkNhdGNoaW5nIHsKKyAgICAgICAgICAgIHI3Rm9yY2VTYWZlUHJvZmlsZSB8fCBydW5DYXRjaGluZyB7CiAgICAgICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYVYyNzZSZWNvcmRpbmdTYWZldHkubmVlZHNSZWNvdmVyeVJldmlldyh0aGlzKQogICAgICAgICAgICAgfS5nZXRPckRlZmF1bHQoZmFsc2UpCiAgICAgICAgIHZhbCBwcmVmZXJyZWRRdWFsaXRpZXMgPQpAQCAtMTA2NDcsNiArMTA2NDUsNyBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICB2YXIgc2VsZWN0ZWRRdWFsaXR5ID0gUXVhbGl0eS5IRAogICAgICAgICB2YXIgc2VsZWN0ZWREeW5hbWljUmFuZ2UgPSBEeW5hbWljUmFuZ2UuU0RSCiAgICAgICAgIHZhciBlbmFibGVWaWRlb1N0YWJpbGl6YXRpb24gPSBmYWxzZQorICAgICAgICB2YXIgYXZhaWxhYmxlUXVhbGl0aWVzID0gZW1wdHlMaXN0PFF1YWxpdHk+KCkKIAogICAgICAgICBpZiAoc2VsZWN0ZWRDYW1lcmFJbmZvICE9IG51bGwpIHsKICAgICAgICAgICAgIHRyeSB7CkBAIC0xMDY1NCwxNiArMTA2NTMsMTEgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgICAgICAgICAgUmVjb3JkZXIuZ2V0VmlkZW9DYXBhYmlsaXRpZXMoc2VsZWN0ZWRDYW1lcmFJbmZvKQogICAgICAgICAgICAgICAgIHZhbCBzZHJRdWFsaXRpZXMgPQogICAgICAgICAgICAgICAgICAgICBjYXBhYmlsaXRpZXMuZ2V0U3VwcG9ydGVkUXVhbGl0aWVzKER5bmFtaWNSYW5nZS5TRFIpCi0KLSAgICAgICAgICAgICAgICBmdW4gc2VsZWN0RnJvbShhdmFpbGFibGU6IExpc3Q8UXVhbGl0eT4pOiBRdWFsaXR5IHsKLSAgICAgICAgICAgICAgICAgICAgcmV0dXJuIHByZWZlcnJlZFF1YWxpdGllcy5maXJzdE9yTnVsbCB7IGl0IGluIGF2YWlsYWJsZSB9Ci0gICAgICAgICAgICAgICAgICAgICAgICA/OiBsaXN0T2YoUXVhbGl0eS5GSEQsIFF1YWxpdHkuSEQsIFF1YWxpdHkuVUhEKQotICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5maXJzdE9yTnVsbCB7IGl0IGluIGF2YWlsYWJsZSB9Ci0gICAgICAgICAgICAgICAgICAgICAgICA/OiBhdmFpbGFibGUuZmlyc3RPck51bGwoKQotICAgICAgICAgICAgICAgICAgICAgICAgPzogUXVhbGl0eS5IRAotICAgICAgICAgICAgICAgIH0KLQotICAgICAgICAgICAgICAgIHNlbGVjdGVkUXVhbGl0eSA9IHNlbGVjdEZyb20oc2RyUXVhbGl0aWVzKQorICAgICAgICAgICAgICAgIGF2YWlsYWJsZVF1YWxpdGllcyA9IHNkclF1YWxpdGllcworICAgICAgICAgICAgICAgIHNlbGVjdGVkUXVhbGl0eSA9IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suc2VsZWN0UXVhbGl0eSgKKyAgICAgICAgICAgICAgICAgICAgcHJlZmVycmVkUXVhbGl0aWVzLAorICAgICAgICAgICAgICAgICAgICBzZHJRdWFsaXRpZXMsCisgICAgICAgICAgICAgICAgKQogCiAgICAgICAgICAgICAgICAgaWYgKAogICAgICAgICAgICAgICAgICAgICAhcmVjb3ZlcnlTYWZlUHJvZmlsZSAmJgpAQCAtMTA2NzMsNyArMTA2NjcsMTEgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgICAgICAgICAgdmFsIGhkclF1YWxpdGllcyA9CiAgICAgICAgICAgICAgICAgICAgICAgICBjYXBhYmlsaXRpZXMuZ2V0U3VwcG9ydGVkUXVhbGl0aWVzKER5bmFtaWNSYW5nZS5ITEdfMTBfQklUKQogICAgICAgICAgICAgICAgICAgICBpZiAoaGRyUXVhbGl0aWVzLmlzTm90RW1wdHkoKSkgewotICAgICAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRRdWFsaXR5ID0gc2VsZWN0RnJvbShoZHJRdWFsaXRpZXMpCisgICAgICAgICAgICAgICAgICAgICAgICBhdmFpbGFibGVRdWFsaXRpZXMgPSAoc2RyUXVhbGl0aWVzICsgaGRyUXVhbGl0aWVzKS5kaXN0aW5jdCgpCisgICAgICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZFF1YWxpdHkgPSBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLnNlbGVjdFF1YWxpdHkoCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgcHJlZmVycmVkUXVhbGl0aWVzLAorICAgICAgICAgICAgICAgICAgICAgICAgICAgIGhkclF1YWxpdGllcywKKyAgICAgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkRHluYW1pY1JhbmdlID0gRHluYW1pY1JhbmdlLkhMR18xMF9CSVQKICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgIH0KQEAgLTEwNjkwLDYgKzEwNjg4LDE5IEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICB9CiAgICAgICAgIH0KIAorICAgICAgICB2YWwgcmVxdWVzdGVkRnBzID0gcmVxdWVzdGVkVmlkZW9GcHMoKQorICAgICAgICB2YWwgYXZhaWxhYmxlRnJhbWVSYXRlUmFuZ2VzID0KKyAgICAgICAgICAgIHNlbGVjdGVkQ2FtZXJhSW5mbz8uc3VwcG9ydGVkRnJhbWVSYXRlUmFuZ2VzLm9yRW1wdHkoKQorICAgICAgICByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2UgPQorICAgICAgICAgICAgaWYgKGlzSW50ZXJ2aWV3Q2FtZXJhKCkpIHsKKyAgICAgICAgICAgICAgICBmOUludGVydmlld0ZyYW1lUmF0ZVJhbmdlKHNlbGVjdGVkQ2FtZXJhSW5mbykKKyAgICAgICAgICAgIH0gZWxzZSB7CisgICAgICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5zZWxlY3RGcmFtZVJhdGUoCisgICAgICAgICAgICAgICAgICAgIHJlcXVlc3RlZEZwcywKKyAgICAgICAgICAgICAgICAgICAgYXZhaWxhYmxlRnJhbWVSYXRlUmFuZ2VzLAorICAgICAgICAgICAgICAgICkKKyAgICAgICAgICAgIH0KKwogICAgICAgICBjb3JlRGVsaXZlcmVkQml0cmF0ZUJwcyA9IGNvcmVCaXRyYXRlRm9yKHNlbGVjdGVkUXVhbGl0eSkKICAgICAgICAgdmFsIGRlbGl2ZXJlZFF1YWxpdHlMYWJlbCA9IGNvcmVRdWFsaXR5TGFiZWwoc2VsZWN0ZWRRdWFsaXR5KQogICAgICAgICBjb3JlRGVsaXZlcmVkUHJvZmlsZUxhYmVsID0gd2hlbiB7CkBAIC0xMDY5OCwxMiArMTA3MDksMTMgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgICAgICAiJGRlbGl2ZXJlZFF1YWxpdHlMYWJlbCBERVZJQ0UiCiAgICAgICAgICAgICBlbHNlIC0+ICIke3F1YWxpdHlEZWNrTGFiZWwoKX0g4oaSICRkZWxpdmVyZWRRdWFsaXR5TGFiZWwiCiAgICAgICAgIH0KLSAgICAgICAgYWN0aXZlVmlkZW9GcHNMYWJlbCA9Ci0gICAgICAgICAgICBpZiAocXVhbGl0eU1vZGVzW3F1YWxpdHlJbmRleF0gPT0gIkxPVyBMSUdIVCIpIHsKLSAgICAgICAgICAgICAgICAiQVVUTyBMT1ctTElHSFQgRlBTIgotICAgICAgICAgICAgfSBlbHNlIHsKLSAgICAgICAgICAgICAgICAiQVVUTyBGUFMiCi0gICAgICAgICAgICB9CisgICAgICAgIGFjdGl2ZVZpZGVvRnBzTGFiZWwgPSB3aGVuIHsKKyAgICAgICAgICAgIHJlcXVlc3RlZEZwcyA8PSAwIC0+ICJBVVRPIExPVy1MSUdIVCBGUFMiCisgICAgICAgICAgICByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2UgPT0gbnVsbCAtPiAiQVVUTyBGUFMgRkFMTEJBQ0siCisgICAgICAgICAgICByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2U/Lmxvd2VyID09IHJlcXVlc3RlZEZwcyAmJgorICAgICAgICAgICAgICAgIHI3U2VsZWN0ZWRGcmFtZVJhdGVSYW5nZT8udXBwZXIgPT0gcmVxdWVzdGVkRnBzIC0+ICIkcmVxdWVzdGVkRnBzIEZQUyBERVZJQ0UiCisgICAgICAgICAgICBlbHNlIC0+ICIke0RldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suZnJhbWVSYXRlTGFiZWwocjdTZWxlY3RlZEZyYW1lUmF0ZVJhbmdlKX0gRkFMTEJBQ0siCisgICAgICAgIH0KICAgICAgICAgYWN0aXZlVmlkZW9TdGFiaWxpemF0aW9uTGFiZWwgPQogICAgICAgICAgICAgd2hlbiB7CiAgICAgICAgICAgICAgICAgZW5hYmxlVmlkZW9TdGFiaWxpemF0aW9uIC0+ICJTVEFCIE9OIgpAQCAtMTA3MTksNiArMTA3MzEsMzggQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgYWN0aXZlVmlkZW9Bc3BlY3RMYWJlbCA9CiAgICAgICAgICAgICBEZXZlbG9wVWdhbmRhRmllbGRJbnRlbGxpZ2VuY2VQYW5lbC5hY3RpdmVGb3JtYXRMYWJlbCh0aGlzKQogCisgICAgICAgIHZhbCBmYWxsYmFja1JlYXNvbnMgPSBidWlsZExpc3QgeworICAgICAgICAgICAgaWYgKHByZWZlcnJlZFF1YWxpdGllcy5maXJzdE9yTnVsbCgpICE9IHNlbGVjdGVkUXVhbGl0eSkgYWRkKCJRVUFMSVRZIikKKyAgICAgICAgICAgIGlmICh3YW50c1ZpZGVvSGRyKCkgJiYgc2VsZWN0ZWREeW5hbWljUmFuZ2UgPT0gRHluYW1pY1JhbmdlLlNEUikgYWRkKCJEWU5BTUlDX1JBTkdFIikKKyAgICAgICAgICAgIGlmICh3YW50c1ZpZGVvU3RhYmlsaXphdGlvbigpICYmICFlbmFibGVWaWRlb1N0YWJpbGl6YXRpb24pIGFkZCgiU1RBQklMSVpBVElPTiIpCisgICAgICAgICAgICBpZiAocmVxdWVzdGVkRnBzID4gMCAmJiByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2U/LnVwcGVyICE9IHJlcXVlc3RlZEZwcykgYWRkKCJGUkFNRV9SQVRFIikKKyAgICAgICAgICAgIGlmIChsZW5zU2VsZWN0aW9uLmZhbGxiYWNrQXBwbGllZCkgYWRkKCJMRU5TIikKKyAgICAgICAgfQorICAgICAgICByN0NhcGFiaWxpdHlTdGF0ZSA9IERldmVsb3BVZ2FuZGFDYXB0dXJlQ2FwYWJpbGl0eVN0YXRlKAorICAgICAgICAgICAgbW9kZSA9IGN1cnJlbnRDYW1lcmFQYWdlKCkubmFtZSwKKyAgICAgICAgICAgIHJlcXVlc3RlZFF1YWxpdHkgPSBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLnF1YWxpdHlMYWJlbCgKKyAgICAgICAgICAgICAgICBwcmVmZXJyZWRRdWFsaXRpZXMuZmlyc3RPck51bGwoKSA/OiBRdWFsaXR5LkhELAorICAgICAgICAgICAgKSwKKyAgICAgICAgICAgIGF2YWlsYWJsZVF1YWxpdGllcyA9IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suYXZhaWxhYmxlUXVhbGl0eUxhYmVscygKKyAgICAgICAgICAgICAgICBhdmFpbGFibGVRdWFsaXRpZXMsCisgICAgICAgICAgICApLAorICAgICAgICAgICAgc2VsZWN0ZWRRdWFsaXR5ID0gZGVsaXZlcmVkUXVhbGl0eUxhYmVsLAorICAgICAgICAgICAgcmVxdWVzdGVkRnBzID0gcmVxdWVzdGVkRnBzLnRha2VJZiB7IGl0ID4gMCB9LAorICAgICAgICAgICAgYXZhaWxhYmxlRnBzUmFuZ2VzID0gRGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5hdmFpbGFibGVGcmFtZVJhdGVMYWJlbHMoCisgICAgICAgICAgICAgICAgYXZhaWxhYmxlRnJhbWVSYXRlUmFuZ2VzLAorICAgICAgICAgICAgKSwKKyAgICAgICAgICAgIHNlbGVjdGVkRnBzUmFuZ2UgPSBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLmZyYW1lUmF0ZUxhYmVsKAorICAgICAgICAgICAgICAgIHI3U2VsZWN0ZWRGcmFtZVJhdGVSYW5nZSwKKyAgICAgICAgICAgICksCisgICAgICAgICAgICByZXF1ZXN0ZWREeW5hbWljUmFuZ2UgPSBpZiAod2FudHNWaWRlb0hkcigpKSAiSExHMTAgSERSIiBlbHNlICJTRFIiLAorICAgICAgICAgICAgc2VsZWN0ZWREeW5hbWljUmFuZ2UgPSBpZiAoc2VsZWN0ZWREeW5hbWljUmFuZ2UgPT0gRHluYW1pY1JhbmdlLkhMR18xMF9CSVQpICJITEcxMCBIRFIiIGVsc2UgIlNEUiIsCisgICAgICAgICAgICByZXF1ZXN0ZWRTdGFiaWxpemF0aW9uID0gd2FudHNWaWRlb1N0YWJpbGl6YXRpb24oKSwKKyAgICAgICAgICAgIHNlbGVjdGVkU3RhYmlsaXphdGlvbiA9IGVuYWJsZVZpZGVvU3RhYmlsaXphdGlvbiwKKyAgICAgICAgICAgIHJlcXVlc3RlZExlbnMgPSBsZW5zU2VsZWN0aW9uLnJlcXVlc3RlZExhYmVsLAorICAgICAgICAgICAgc2VsZWN0ZWRMZW5zID0gbGVuc1NlbGVjdGlvbi5zZWxlY3RlZExhYmVsLAorICAgICAgICAgICAgZmFsbGJhY2tSZWFzb25zID0gZmFsbGJhY2tSZWFzb25zLAorICAgICAgICApCisKICAgICAgICAgdmFsIHByZXZpZXdCdWlsZGVyID0gUHJldmlldy5CdWlsZGVyKCkKICAgICAgICAgZjlBdHRhY2hDYXB0dXJlVGVsZW1ldHJ5KHByZXZpZXdCdWlsZGVyKQogICAgICAgICB2YWwgcHJldmlldyA9IHByZXZpZXdCdWlsZGVyCkBAIC0xMDc0NSw3ICsxMDc4OSw4IEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICAgICAgcXVhbGl0eTogUXVhbGl0eSwKICAgICAgICAgICAgICAgICBkeW5hbWljUmFuZ2U6IER5bmFtaWNSYW5nZSwKICAgICAgICAgICAgICAgICBzdGFiaWxpemF0aW9uOiBCb29sZWFuLAotICAgICAgICAgICAgICAgIGJpdHJhdGU6IEludAorICAgICAgICAgICAgICAgIGJpdHJhdGU6IEludCwKKyAgICAgICAgICAgICAgICBmcmFtZVJhdGVSYW5nZTogYW5kcm9pZC51dGlsLlJhbmdlPEludD4/LAogICAgICAgICAgICAgKTogVmlkZW9DYXB0dXJlPFJlY29yZGVyPiB7CiAgICAgICAgICAgICAgICAgdmFsIHJlY29yZGVyQnVpbGRlciA9CiAgICAgICAgICAgICAgICAgICAgIFJlY29yZGVyLkJ1aWxkZXIoKQpAQCAtMTA3NjUsMTIgKzEwODEwLDEwIEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICAgICAgdmFsIHZpZGVvQnVpbGRlciA9CiAgICAgICAgICAgICAgICAgICAgIFZpZGVvQ2FwdHVyZS5CdWlsZGVyKHJlY29yZGVyKQogCi0gICAgICAgICAgICAgICAgaWYgKGlzSW50ZXJ2aWV3Q2FtZXJhKCkpIHsKLSAgICAgICAgICAgICAgICAgICAgdmFsIGZyYW1lUmFuZ2UgPSBmOUludGVydmlld0ZyYW1lUmF0ZVJhbmdlKHNlbGVjdGVkQ2FtZXJhSW5mbykKLSAgICAgICAgICAgICAgICAgICAgaWYgKGZyYW1lUmFuZ2UgIT0gbnVsbCkgewotICAgICAgICAgICAgICAgICAgICAgICAgdmlkZW9CdWlsZGVyLnNldFRhcmdldEZyYW1lUmF0ZShmcmFtZVJhbmdlKQotICAgICAgICAgICAgICAgICAgICB9Ci0gICAgICAgICAgICAgICAgICAgIGFuZHJvaWQudXRpbC5Mb2cuaSgiRFVfSU5URVJWSUVXX1JFUEFJUiIsICJDYW1lcmFYIEZQUyByZXF1ZXN0OiAkZnJhbWVSYW5nZTsgcHJvZmlsZTogJHtyZXF1ZXN0ZWRWaWRlb0ZwcygpfSIpCisgICAgICAgICAgICAgICAgaWYgKGZyYW1lUmF0ZVJhbmdlICE9IG51bGwpIHsKKyAgICAgICAgICAgICAgICAgICAgLy8gU2VjdGlvbiAyIGFwcGxpZXMgSW50ZXJ2aWV3J3MgY2FwYWJpbGl0eS1iYXNlZCBGUFMKKyAgICAgICAgICAgICAgICAgICAgLy8gYXBwcm9hY2ggdG8gTUFJTiwgTElWRS1zdHlsZSBzb2NpYWwsIFRpa1RvayBhbmQgU3RhdHVzLgorICAgICAgICAgICAgICAgICAgICB2aWRlb0J1aWxkZXIuc2V0VGFyZ2V0RnJhbWVSYXRlKGZyYW1lUmF0ZVJhbmdlKQogICAgICAgICAgICAgICAgIH0KIAogICAgICAgICAgICAgICAgIGlmIChkeW5hbWljUmFuZ2UgIT0gRHluYW1pY1JhbmdlLlNEUikgewpAQCAtMTA3ODcsNyArMTA4MzAsOCBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZFF1YWxpdHksCiAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkRHluYW1pY1JhbmdlLAogICAgICAgICAgICAgICAgICAgICBlbmFibGVWaWRlb1N0YWJpbGl6YXRpb24sCi0gICAgICAgICAgICAgICAgICAgIGNvcmVEZWxpdmVyZWRCaXRyYXRlQnBzCisgICAgICAgICAgICAgICAgICAgIGNvcmVEZWxpdmVyZWRCaXRyYXRlQnBzLAorICAgICAgICAgICAgICAgICAgICByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2UsCiAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgfSBjYXRjaCAoXzogRXhjZXB0aW9uKSB7CiAgICAgICAgICAgICAgICAgLy8gQW4gZW5jb2Rlci9wcm9maWxlIG5lZ290aWF0aW9uIGZhaWx1cmUgZ2V0cyBvbmUgaXNvbGF0ZWQKQEAgLTEwNzk4LDExICsxMDg0MiwyMCBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICAgICAgICAgIGFjdGl2ZVZpZGVvRnBzTGFiZWwgPSAiQVVUTyBGUFMiCiAgICAgICAgICAgICAgICAgYWN0aXZlVmlkZW9TdGFiaWxpemF0aW9uTGFiZWwgPSAiU1RBQiBPRkYiCiAgICAgICAgICAgICAgICAgYWN0aXZlVmlkZW9EeW5hbWljUmFuZ2VMYWJlbCA9ICJTRFIgU0FGRSIKKyAgICAgICAgICAgICAgICByN1NlbGVjdGVkRnJhbWVSYXRlUmFuZ2UgPSBudWxsCisgICAgICAgICAgICAgICAgcjdDYXBhYmlsaXR5U3RhdGUgPSByN0NhcGFiaWxpdHlTdGF0ZT8uY29weSgKKyAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRRdWFsaXR5ID0gIjcyMCIsCisgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkRnBzUmFuZ2UgPSBudWxsLAorICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZER5bmFtaWNSYW5nZSA9ICJTRFIiLAorICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZFN0YWJpbGl6YXRpb24gPSBmYWxzZSwKKyAgICAgICAgICAgICAgICAgICAgZmFsbGJhY2tSZWFzb25zID0gKHI3Q2FwYWJpbGl0eVN0YXRlPy5mYWxsYmFja1JlYXNvbnMub3JFbXB0eSgpICsgIkVOQ09ERVIiKS5kaXN0aW5jdCgpLAorICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICBidWlsZENvcmVWaWRlb0NhcHR1cmUoCiAgICAgICAgICAgICAgICAgICAgIFF1YWxpdHkuSEQsCiAgICAgICAgICAgICAgICAgICAgIER5bmFtaWNSYW5nZS5TRFIsCiAgICAgICAgICAgICAgICAgICAgIGZhbHNlLAotICAgICAgICAgICAgICAgICAgICBjb3JlRGVsaXZlcmVkQml0cmF0ZUJwcworICAgICAgICAgICAgICAgICAgICBjb3JlRGVsaXZlcmVkQml0cmF0ZUJwcywKKyAgICAgICAgICAgICAgICAgICAgbnVsbCwKICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICB9CiAgICAgICAgIH0KQEAgLTEwODk1LDYgKzEwOTQ4LDcgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICB9CiAgICAgICAgICAgICByNVNldFJlY29yZFB1bHNlKGZhbHNlKQorICAgICAgICAgICAgcjdGb3JjZVNhZmVQcm9maWxlID0gZmFsc2UKIAogICAgICAgICAgICAgcmVmcmVzaEh1ZCgpCiAgICAgICAgIH0gY2F0Y2ggKGU6IEV4Y2VwdGlvbikgewpAQCAtMTA5MTgsOSArMTA5NzIsMTkgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgICAgICAgICAgYmluZENhbWVyYSgpCiAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgfSBlbHNlIHsKLSAgICAgICAgICAgICAgICB0b2FzdCgKLSAgICAgICAgICAgICAgICAgICAgIlNlbGVjdGVkIGNhbWVyYSBpcyB1bmF2YWlsYWJsZSIKLSAgICAgICAgICAgICAgICApCisgICAgICAgICAgICAgICAgaWYgKCFwaG90b01vZGUgJiYgIXI3Rm9yY2VTYWZlUHJvZmlsZSkgeworICAgICAgICAgICAgICAgICAgICByN0ZvcmNlU2FmZVByb2ZpbGUgPSB0cnVlCisgICAgICAgICAgICAgICAgICAgIERldmVsb3BVZ2FuZGFWMjc2UmVjb3JkaW5nU2FmZXR5LmFkZEV2ZW50KAorICAgICAgICAgICAgICAgICAgICAgICAgdGhpcywKKyAgICAgICAgICAgICAgICAgICAgICAgICJDQVBBQklMSVRZIEZBTExCQUNLIOKAoiBCSU5EIFJFVFJZIOKAoiBTRFIgSEQgQVVUTyBGUFMiLAorICAgICAgICAgICAgICAgICAgICApCisgICAgICAgICAgICAgICAgICAgIHVpSGFuZGxlci5wb3N0IHsgYmluZENhbWVyYSgpIH0KKyAgICAgICAgICAgICAgICB9IGVsc2UgeworICAgICAgICAgICAgICAgICAgICByN0ZvcmNlU2FmZVByb2ZpbGUgPSBmYWxzZQorICAgICAgICAgICAgICAgICAgICB0b2FzdCgKKyAgICAgICAgICAgICAgICAgICAgICAgICJTZWxlY3RlZCBjYW1lcmEgaXMgdW5hdmFpbGFibGUiCisgICAgICAgICAgICAgICAgICAgICkKKyAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICB9CiAgICAgICAgIH0KICAgICB9CkBAIC0xMzkzOSw2ICsxNDAwMyw3IEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICAgICAgICAgIGNyYXNoU2FmZVRha2VSb290LAogICAgICAgICAgICAgICAgICAgICBjYW1lcmFQYWdlLAogICAgICAgICAgICAgICAgICAgICBwcm9jZWVkZWRXYXJuaW5ncywKKyAgICAgICAgICAgICAgICAgICAgcjdDYXBhYmlsaXR5U3RhdGUsCiAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgfS5nZXRPckVsc2UgeyBmYWlsdXJlIC0+CiAgICAgICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYVYyNzZSZWNvcmRpbmdTYWZldHkuYWRkRXZlbnQoCkBAIC0xNDIxMSw2ICsxNDI3Niw4IEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzYWZldHlSZXN1bHQ/Lm9rID09IHRydWUsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBkdXJhdGlvbk1zLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgYnl0ZXMsCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBjbGVhblVyaSwKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHI3Q2FwYWJpbGl0eVN0YXRlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogCkBAIC0xNDQ4NCwxMiArMTQ1NTEsMTMgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKIAogICAgICAgICB2YWwgY2hyb21lUHJvZmlsZSA9IERldmVsb3BVZ2FuZGFNb2RlUHJvZmlsZXMuZm9yUGFnZShjdXJyZW50Q2FtZXJhUGFnZSgpKQogICAgICAgICB2YWwgZjEyU3RhdHVzID0gRGV2ZWxvcFVnYW5kYUJyb2FkY2FzdFN0YXR1cygKLSAgICAgICAgICAgICAgICBmb3JtYXQgPSBjaHJvbWVQcm9maWxlLnRha2VJZiB7IGl0Lmhhc1Byb2ZpbGVEYXRhIH0/LmxldCB7IHByb2ZpbGUgLT4KLSAgICAgICAgICAgICAgICAgICAgbGlzdE9mTm90TnVsbCgKLSAgICAgICAgICAgICAgICAgICAgICAgIHByb2ZpbGUucXVhbGl0eU5hbWUsCi0gICAgICAgICAgICAgICAgICAgICAgICBwcm9maWxlLmZyYW1lUmF0ZT8ubGV0IHsgIiR7aXR9RlBTIiB9LAotICAgICAgICAgICAgICAgICAgICApLmpvaW5Ub1N0cmluZygiIOKAoiAiKQotICAgICAgICAgICAgICAgIH0sCisgICAgICAgICAgICAgICAgZm9ybWF0ID0gcjdDYXBhYmlsaXR5U3RhdGU/LmNvbXBhY3RMYWJlbCgpCisgICAgICAgICAgICAgICAgICAgID86IGNocm9tZVByb2ZpbGUudGFrZUlmIHsgaXQuaGFzUHJvZmlsZURhdGEgfT8ubGV0IHsgcHJvZmlsZSAtPgorICAgICAgICAgICAgICAgICAgICAgICAgbGlzdE9mTm90TnVsbCgKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICBwcm9maWxlLnF1YWxpdHlOYW1lLAorICAgICAgICAgICAgICAgICAgICAgICAgICAgIHByb2ZpbGUuZnJhbWVSYXRlPy5sZXQgeyAiJHtpdH1GUFMiIH0sCisgICAgICAgICAgICAgICAgICAgICAgICApLmpvaW5Ub1N0cmluZygiIOKAoiAiKQorICAgICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgIC8vIENhbWVyYVggZG9lcyBub3QgZXhwb3NlIHRoZSBuZWdvdGlhdGVkIGVuY29kZXIgTUlNRSBoZXJlLgogICAgICAgICAgICAgICAgIC8vIFVua25vd24gc3RheXMgdmlzaWJsZSBpbnN0ZWFkIG9mIGVjaG9pbmcgYSByZXF1ZXN0ZWQgY29kZWMuCiAgICAgICAgICAgICAgICAgY29kZWMgPSBudWxsLApAQCAtMTgwNTksMTUgKzE4MTI3LDE1IEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgfQogCiAgICAgcHJpdmF0ZSBmdW4gYnVpbGRRdWFsaXR5T3JkZXIoKTogTGlzdDxRdWFsaXR5PiB7Ci0gICAgICAgIGFkZGl0aXZlTW9kZVByb2ZpbGUoKT8ubGV0IHsKLSAgICAgICAgICAgIC8vIFRoZSB0aHJlZSBkZWxpdmVyeSBwYWdlcyByZXF1ZXN0IGEgcG9ydHJhaXQgMTA4MCBtYXN0ZXIgZmlyc3QuCi0gICAgICAgICAgICAvLyBGYWxsYmFjayBvcmRlciBpcyBrZXB0IGxvY2FsIHRvIHRoZW07IG5vIGV4aXN0aW5nIGV4cGVyaWVuY2UKLSAgICAgICAgICAgIC8vIGNoYW5nZXMgaXRzIHF1YWxpdHkgbmVnb3RpYXRpb24uCi0gICAgICAgICAgICByZXR1cm4gbGlzdE9mKAotICAgICAgICAgICAgICAgIFF1YWxpdHkuRkhELAotICAgICAgICAgICAgICAgIFF1YWxpdHkuSEQsCi0gICAgICAgICAgICAgICAgUXVhbGl0eS5VSEQKLSAgICAgICAgICAgICkKKyAgICAgICAgYWRkaXRpdmVNb2RlUHJvZmlsZSgpPy5sZXQgeyBwcm9maWxlIC0+CisgICAgICAgICAgICAvLyBUaWtUb2sgYW5kIFN0YXR1cyByZXF1ZXN0IHBvcnRyYWl0IDEwODAgZmlyc3QuIEludGVydmlldydzCisgICAgICAgICAgICAvLyBkZWNsYXJlZCBNQVNURVIgVUhEIHJlcXVlc3QgaXMgbm93IGhvbm91cmVkIGZpcnN0IGFuZCB0aGVuCisgICAgICAgICAgICAvLyBuZWdvdGlhdGVkIGRvd24gb24gZGV2aWNlcyB0aGF0IGRvIG5vdCBleHBvc2UgaXQuCisgICAgICAgICAgICByZXR1cm4gaWYgKHByb2ZpbGUucGFnZSA9PSBEZXZlbG9wVWdhbmRhQ2FtZXJhUGFnZS5JTlRFUlZJRVcpIHsKKyAgICAgICAgICAgICAgICBsaXN0T2YoUXVhbGl0eS5VSEQsIFF1YWxpdHkuRkhELCBRdWFsaXR5LkhEKQorICAgICAgICAgICAgfSBlbHNlIHsKKyAgICAgICAgICAgICAgICBsaXN0T2YoUXVhbGl0eS5GSEQsIFF1YWxpdHkuSEQsIFF1YWxpdHkuVUhEKQorICAgICAgICAgICAgfQogICAgICAgICB9CiAKICAgICAgICAgcmV0dXJuIHdoZW4gKApAQCAtMTgwNzUsMTUgKzE4MTQzLDE0IEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICAgICAgICAgIHF1YWxpdHlJbmRleAogICAgICAgICAgICAgICAgIF0KICAgICAgICAgICAgICkgewotICAgICAgICAgICAgICAgIC8vIEZIRCBQcm8gQ2xlYXIgVmlkZW86IHRoZSB0ZXN0ZWQgY2xpcCB3YXMgNzIwcC8xMiBNYnBzLgotICAgICAgICAgICAgICAgIC8vIFByZWZlciBhIGNsZWFuLCBicm9hZGx5IGNvbXBhdGlibGUgRkhEIG1hc3Rlci4gIDRLIHJlbWFpbnMKLSAgICAgICAgICAgICAgICAvLyBhIHJlYWwgZmFsbGJhY2sgd2hlbiB0aGUgc2VsZWN0ZWQgY2FtZXJhIGV4cG9zZXMgaXQuCisgICAgICAgICAgICAgICAgLy8gSG9ub3VyIHRoZSBvcGVyYXRvcidzIDRLIHJlcXVlc3QgZmlyc3QuIFNlY3Rpb24gMiBmYWxscyBiYWNrCisgICAgICAgICAgICAgICAgLy8gdG8gMTA4MC83MjAgYXV0b21hdGljYWxseSB3aGVuIHRoZSBzZWxlY3RlZCBsZW5zIGxhY2tzIFVIRC4KICAgICAgICAgICAgICAgICAiTUFTVEVSIFVIRCIsCiAgICAgICAgICAgICAgICAgIlVIRCA2MCIsCiAgICAgICAgICAgICAgICAgIk1BU1RFUiBIRFIiIC0+CiAgICAgICAgICAgICAgICAgICAgIGxpc3RPZigKLSAgICAgICAgICAgICAgICAgICAgICAgIFF1YWxpdHkuRkhELAogICAgICAgICAgICAgICAgICAgICAgICAgUXVhbGl0eS5VSEQsCisgICAgICAgICAgICAgICAgICAgICAgICBRdWFsaXR5LkZIRCwKICAgICAgICAgICAgICAgICAgICAgICAgIFF1YWxpdHkuSEQKICAgICAgICAgICAgICAgICAgICAgKQogCmRpZmYgLS1naXQgYS9yZXBvLXI1LXZlcmlmeS9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5rdCBiL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLmt0Cm5ldyBmaWxlIG1vZGUgMTAwNjQ0CmluZGV4IDAwMDAwMDAuLjRlMmY1MzMKLS0tIC9kZXYvbnVsbAorKysgYi9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5rdApAQCAtMCwwICsxLDE4NSBAQAorcGFja2FnZSBjb20uc2VudG9uZ29oYXJ1bmEucHVsc2UKKworaW1wb3J0IGFuZHJvaWQuY29udGVudC5Db250ZXh0CitpbXBvcnQgYW5kcm9pZC5tZWRpYS5NZWRpYU1ldGFkYXRhUmV0cmlldmVyCitpbXBvcnQgYW5kcm9pZC5uZXQuVXJpCitpbXBvcnQgYW5kcm9pZC51dGlsLlJhbmdlCitpbXBvcnQgYW5kcm9pZHguY2FtZXJhLnZpZGVvLlF1YWxpdHkKK2ltcG9ydCBvcmcuanNvbi5KU09OQXJyYXkKK2ltcG9ydCBvcmcuanNvbi5KU09OT2JqZWN0CitpbXBvcnQga290bGluLm1hdGguYWJzCitpbXBvcnQga290bGluLm1hdGgucm91bmRUb0ludAorCisvKioKKyAqIFNlY3Rpb24gMiBjYXBhYmlsaXR5IGNvbnRyYWN0IHNoYXJlZCBieSBhbGwgZml2ZSBjYW1lcmEgZmFjZXMuCisgKgorICogUmVxdWVzdHMgcmVtYWluIG9wZXJhdG9yIGludGVudC4gQXZhaWxhYmxlIHZhbHVlcyBjb21lIGZyb20gdGhlIHNlbGVjdGVkCisgKiBDYW1lcmFYIGNhbWVyYS4gU2VsZWN0ZWQgdmFsdWVzIGFyZSB0aGUgZXhhY3QgdmFsdWVzIHBhc3NlZCB0byBDYW1lcmFYLgorICogRmluYWwgc2lkZWNhcnMgYWRkaXRpb25hbGx5IHByb2JlIHRoZSBzYXZlZCBDTEVBTiBmaWxlIHNvIG5vIHJlcXVlc3RlZAorICogdmFsdWUgaXMgcHJlc2VudGVkIGFzIGEgbWVhc3VyZWQgcmVzdWx0LgorICovCitkYXRhIGNsYXNzIERldmVsb3BVZ2FuZGFDYXB0dXJlQ2FwYWJpbGl0eVN0YXRlKAorICAgIHZhbCBtb2RlOiBTdHJpbmcsCisgICAgdmFsIHJlcXVlc3RlZFF1YWxpdHk6IFN0cmluZywKKyAgICB2YWwgYXZhaWxhYmxlUXVhbGl0aWVzOiBMaXN0PFN0cmluZz4sCisgICAgdmFsIHNlbGVjdGVkUXVhbGl0eTogU3RyaW5nLAorICAgIHZhbCByZXF1ZXN0ZWRGcHM6IEludD8sCisgICAgdmFsIGF2YWlsYWJsZUZwc1JhbmdlczogTGlzdDxTdHJpbmc+LAorICAgIHZhbCBzZWxlY3RlZEZwc1JhbmdlOiBTdHJpbmc/LAorICAgIHZhbCByZXF1ZXN0ZWREeW5hbWljUmFuZ2U6IFN0cmluZywKKyAgICB2YWwgc2VsZWN0ZWREeW5hbWljUmFuZ2U6IFN0cmluZywKKyAgICB2YWwgcmVxdWVzdGVkU3RhYmlsaXphdGlvbjogQm9vbGVhbiwKKyAgICB2YWwgc2VsZWN0ZWRTdGFiaWxpemF0aW9uOiBCb29sZWFuLAorICAgIHZhbCByZXF1ZXN0ZWRMZW5zOiBTdHJpbmcsCisgICAgdmFsIHNlbGVjdGVkTGVuczogU3RyaW5nLAorICAgIHZhbCBmYWxsYmFja1JlYXNvbnM6IExpc3Q8U3RyaW5nPiwKKykgeworICAgIGZ1biBjb21wYWN0TGFiZWwoKTogU3RyaW5nIHsKKyAgICAgICAgdmFsIHJlcXVlc3QgPSAiJHJlcXVlc3RlZFF1YWxpdHkke3JlcXVlc3RlZEZwcyA/OiAiQSJ9IgorICAgICAgICB2YWwgYXZhaWxhYmxlUXVhbGl0eSA9IGF2YWlsYWJsZVF1YWxpdGllcy50YWtlKDIpLmpvaW5Ub1N0cmluZygiLyIpLmlmQmxhbmsgeyAiPyIgfQorICAgICAgICB2YWwgbWF4aW11bUF2YWlsYWJsZUZwcyA9IGF2YWlsYWJsZUZwc1JhbmdlcworICAgICAgICAgICAgLm1hcE5vdE51bGwgeworICAgICAgICAgICAgICAgIGl0LnJlbW92ZVN1ZmZpeCgiRlBTIikuc3Vic3RyaW5nQWZ0ZXJMYXN0KCctJykudG9JbnRPck51bGwoKQorICAgICAgICAgICAgfQorICAgICAgICAgICAgLm1heE9yTnVsbCgpCisgICAgICAgICAgICA/LnRvU3RyaW5nKCkKKyAgICAgICAgICAgID86ICJBIgorICAgICAgICB2YWwgc2VsZWN0ZWRGcHMgPSBzZWxlY3RlZEZwc1JhbmdlCisgICAgICAgICAgICA/LnJlbW92ZVN1ZmZpeCgiRlBTIikKKyAgICAgICAgICAgID8uc3Vic3RyaW5nQWZ0ZXJMYXN0KCctJykKKyAgICAgICAgICAgID86ICJBIgorICAgICAgICByZXR1cm4gIlJFUSAkcmVxdWVzdCDigKIgQVYgJGF2YWlsYWJsZVF1YWxpdHniiaQkbWF4aW11bUF2YWlsYWJsZUZwcyDigKIgQUNUICRzZWxlY3RlZFF1YWxpdHkkc2VsZWN0ZWRGcHMiCisgICAgfQorCisgICAgZnVuIHRvSnNvbigpOiBKU09OT2JqZWN0ID0gSlNPTk9iamVjdCgpLmFwcGx5IHsKKyAgICAgICAgcHV0KCJtb2RlIiwgbW9kZSkKKyAgICAgICAgcHV0KCJyZXF1ZXN0ZWRRdWFsaXR5IiwgcmVxdWVzdGVkUXVhbGl0eSkKKyAgICAgICAgcHV0KCJhdmFpbGFibGVRdWFsaXRpZXMiLCBKU09OQXJyYXkoYXZhaWxhYmxlUXVhbGl0aWVzKSkKKyAgICAgICAgcHV0KCJzZWxlY3RlZFF1YWxpdHkiLCBzZWxlY3RlZFF1YWxpdHkpCisgICAgICAgIHB1dCgicmVxdWVzdGVkRnBzIiwgcmVxdWVzdGVkRnBzID86IEpTT05PYmplY3QuTlVMTCkKKyAgICAgICAgcHV0KCJhdmFpbGFibGVGcHNSYW5nZXMiLCBKU09OQXJyYXkoYXZhaWxhYmxlRnBzUmFuZ2VzKSkKKyAgICAgICAgcHV0KCJzZWxlY3RlZEZwc1JhbmdlIiwgc2VsZWN0ZWRGcHNSYW5nZSA/OiBKU09OT2JqZWN0Lk5VTEwpCisgICAgICAgIHB1dCgicmVxdWVzdGVkRHluYW1pY1JhbmdlIiwgcmVxdWVzdGVkRHluYW1pY1JhbmdlKQorICAgICAgICBwdXQoInNlbGVjdGVkRHluYW1pY1JhbmdlIiwgc2VsZWN0ZWREeW5hbWljUmFuZ2UpCisgICAgICAgIHB1dCgicmVxdWVzdGVkU3RhYmlsaXphdGlvbiIsIHJlcXVlc3RlZFN0YWJpbGl6YXRpb24pCisgICAgICAgIHB1dCgic2VsZWN0ZWRTdGFiaWxpemF0aW9uIiwgc2VsZWN0ZWRTdGFiaWxpemF0aW9uKQorICAgICAgICBwdXQoInJlcXVlc3RlZExlbnMiLCByZXF1ZXN0ZWRMZW5zKQorICAgICAgICBwdXQoInNlbGVjdGVkTGVucyIsIHNlbGVjdGVkTGVucykKKyAgICAgICAgcHV0KCJmYWxsYmFja0FwcGxpZWQiLCBmYWxsYmFja1JlYXNvbnMuaXNOb3RFbXB0eSgpKQorICAgICAgICBwdXQoImZhbGxiYWNrUmVhc29ucyIsIEpTT05BcnJheShmYWxsYmFja1JlYXNvbnMpKQorICAgIH0KK30KKworZGF0YSBjbGFzcyBEZXZlbG9wVWdhbmRhQWN0dWFsQ2FwdHVyZVByb2JlKAorICAgIHZhbCB3aWR0aDogSW50PywKKyAgICB2YWwgaGVpZ2h0OiBJbnQ/LAorICAgIHZhbCBmcmFtZVJhdGU6IEZsb2F0PywKKyAgICB2YWwgYml0cmF0ZUJwczogTG9uZz8sCisgICAgdmFsIHJvdGF0aW9uRGVncmVlczogSW50PywKKyAgICB2YWwgbWltZVR5cGU6IFN0cmluZz8sCispIHsKKyAgICBmdW4gdG9Kc29uKCk6IEpTT05PYmplY3QgPSBKU09OT2JqZWN0KCkuYXBwbHkgeworICAgICAgICBwdXQoIndpZHRoIiwgd2lkdGggPzogSlNPTk9iamVjdC5OVUxMKQorICAgICAgICBwdXQoImhlaWdodCIsIGhlaWdodCA/OiBKU09OT2JqZWN0Lk5VTEwpCisgICAgICAgIHB1dCgiZnJhbWVSYXRlIiwgZnJhbWVSYXRlID86IEpTT05PYmplY3QuTlVMTCkKKyAgICAgICAgcHV0KCJiaXRyYXRlQnBzIiwgYml0cmF0ZUJwcyA/OiBKU09OT2JqZWN0Lk5VTEwpCisgICAgICAgIHB1dCgicm90YXRpb25EZWdyZWVzIiwgcm90YXRpb25EZWdyZWVzID86IEpTT05PYmplY3QuTlVMTCkKKyAgICAgICAgcHV0KCJtaW1lVHlwZSIsIG1pbWVUeXBlID86IEpTT05PYmplY3QuTlVMTCkKKyAgICAgICAgcHV0KCJzb3VyY2UiLCAiTUVBU1VSRURfRlJPTV9GSU5BTF9DTEVBTl9GSUxFIikKKyAgICB9Cit9CisKK29iamVjdCBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrIHsKKyAgICBwcml2YXRlIHZhbCBxdWFsaXR5T3JkZXIgPSBsaXN0T2YoUXVhbGl0eS5VSEQsIFF1YWxpdHkuRkhELCBRdWFsaXR5LkhELCBRdWFsaXR5LlNEKQorCisgICAgZnVuIHF1YWxpdHlMYWJlbChxdWFsaXR5OiBRdWFsaXR5KTogU3RyaW5nID0gd2hlbiAocXVhbGl0eSkgeworICAgICAgICBRdWFsaXR5LlVIRCAtPiAiNEsiCisgICAgICAgIFF1YWxpdHkuRkhEIC0+ICIxMDgwIgorICAgICAgICBRdWFsaXR5LkhEIC0+ICI3MjAiCisgICAgICAgIFF1YWxpdHkuU0QgLT4gIjQ4MCIKKyAgICAgICAgZWxzZSAtPiAiREVWSUNFIgorICAgIH0KKworICAgIGZ1biBhdmFpbGFibGVRdWFsaXR5TGFiZWxzKHF1YWxpdGllczogQ29sbGVjdGlvbjxRdWFsaXR5Pik6IExpc3Q8U3RyaW5nPiA9CisgICAgICAgIHF1YWxpdHlPcmRlci5maWx0ZXIgeyBpdCBpbiBxdWFsaXRpZXMgfS5tYXAoOjpxdWFsaXR5TGFiZWwpCisKKyAgICBmdW4gc2VsZWN0UXVhbGl0eSgKKyAgICAgICAgcHJlZmVycmVkOiBMaXN0PFF1YWxpdHk+LAorICAgICAgICBhdmFpbGFibGU6IENvbGxlY3Rpb248UXVhbGl0eT4sCisgICAgKTogUXVhbGl0eSB7CisgICAgICAgIHZhbCBzdXBwb3J0ZWQgPSBhdmFpbGFibGUudG9TZXQoKQorICAgICAgICByZXR1cm4gcHJlZmVycmVkLmZpcnN0T3JOdWxsIHsgaXQgaW4gc3VwcG9ydGVkIH0KKyAgICAgICAgICAgID86IHF1YWxpdHlPcmRlci5maXJzdE9yTnVsbCB7IGl0IGluIHN1cHBvcnRlZCB9CisgICAgICAgICAgICA/OiBwcmVmZXJyZWQuZmlyc3RPck51bGwoKQorICAgICAgICAgICAgPzogUXVhbGl0eS5IRAorICAgIH0KKworICAgIC8qKgorICAgICAqIEV4YWN0IGZpeGVkIEZQUyB3aW5zLCB0aGVuIGEgcmFuZ2UgZW5kaW5nIGF0IHRoZSByZXF1ZXN0LCB0aGVuIGEgcmFuZ2UKKyAgICAgKiBjb250YWluaW5nIGl0LiBJZiB0aGUgcmVxdWVzdCBpcyB1bmF2YWlsYWJsZSwgc3RlcCBkb3duIGJlZm9yZSBldmVyCisgICAgICogc3RlcHBpbmcgdXAuIEFuIGVtcHR5IGRldmljZSBsaXN0IGxlYXZlcyBDYW1lcmFYIGluIEFVVE8uCisgICAgICovCisgICAgZnVuIHNlbGVjdEZyYW1lUmF0ZSgKKyAgICAgICAgcmVxdWVzdGVkOiBJbnQsCisgICAgICAgIGF2YWlsYWJsZTogQ29sbGVjdGlvbjxSYW5nZTxJbnQ+PiwKKyAgICApOiBSYW5nZTxJbnQ+PyB7CisgICAgICAgIGlmIChyZXF1ZXN0ZWQgPD0gMCkgcmV0dXJuIG51bGwKKyAgICAgICAgdmFsIHJhbmdlcyA9IGF2YWlsYWJsZQorICAgICAgICAgICAgLmZpbHRlciB7IGl0Lmxvd2VyID4gMCAmJiBpdC51cHBlciA+PSBpdC5sb3dlciB9CisgICAgICAgICAgICAuZGlzdGluY3RCeSB7IGl0Lmxvd2VyIHRvIGl0LnVwcGVyIH0KKyAgICAgICAgaWYgKHJhbmdlcy5pc0VtcHR5KCkpIHJldHVybiBudWxsCisKKyAgICAgICAgcmV0dXJuIHJhbmdlcy5maXJzdE9yTnVsbCB7IGl0Lmxvd2VyID09IHJlcXVlc3RlZCAmJiBpdC51cHBlciA9PSByZXF1ZXN0ZWQgfQorICAgICAgICAgICAgPzogcmFuZ2VzLmZpbHRlciB7IGl0LnVwcGVyID09IHJlcXVlc3RlZCB9Lm1pbkJ5T3JOdWxsIHsgaXQudXBwZXIgLSBpdC5sb3dlciB9CisgICAgICAgICAgICA/OiByYW5nZXMKKyAgICAgICAgICAgICAgICAuZmlsdGVyIHsgaXQubG93ZXIgPD0gcmVxdWVzdGVkICYmIGl0LnVwcGVyID49IHJlcXVlc3RlZCB9CisgICAgICAgICAgICAgICAgLm1pbldpdGhPck51bGwoY29tcGFyZUJ5PFJhbmdlPEludD4+IHsgaXQudXBwZXIgLSBpdC5sb3dlciB9LnRoZW5CeURlc2NlbmRpbmcgeyBpdC5sb3dlciB9KQorICAgICAgICAgICAgPzogcmFuZ2VzCisgICAgICAgICAgICAgICAgLmZpbHRlciB7IGl0LnVwcGVyIDwgcmVxdWVzdGVkIH0KKyAgICAgICAgICAgICAgICAubWF4V2l0aE9yTnVsbChjb21wYXJlQnk8UmFuZ2U8SW50Pj4geyBpdC51cHBlciB9LnRoZW5CeSB7IGl0Lmxvd2VyIH0pCisgICAgICAgICAgICA/OiByYW5nZXMubWluQnlPck51bGwgeyBhYnMoaXQudXBwZXIgLSByZXF1ZXN0ZWQpIH0KKyAgICB9CisKKyAgICBmdW4gZnJhbWVSYXRlTGFiZWwocmFuZ2U6IFJhbmdlPEludD4/KTogU3RyaW5nPyA9IHJhbmdlPy5sZXQgeworICAgICAgICBpZiAoaXQubG93ZXIgPT0gaXQudXBwZXIpICIke2l0LnVwcGVyfUZQUyIgZWxzZSAiJHtpdC5sb3dlcn0tJHtpdC51cHBlcn1GUFMiCisgICAgfQorCisgICAgZnVuIGF2YWlsYWJsZUZyYW1lUmF0ZUxhYmVscyhyYW5nZXM6IENvbGxlY3Rpb248UmFuZ2U8SW50Pj4pOiBMaXN0PFN0cmluZz4gPQorICAgICAgICByYW5nZXMKKyAgICAgICAgICAgIC5maWx0ZXIgeyBpdC5sb3dlciA+IDAgJiYgaXQudXBwZXIgPj0gaXQubG93ZXIgfQorICAgICAgICAgICAgLmRpc3RpbmN0QnkgeyBpdC5sb3dlciB0byBpdC51cHBlciB9CisgICAgICAgICAgICAuc29ydGVkV2l0aChjb21wYXJlQnk8UmFuZ2U8SW50Pj4geyBpdC51cHBlciB9LnRoZW5CeSB7IGl0Lmxvd2VyIH0pCisgICAgICAgICAgICAubWFwTm90TnVsbCg6OmZyYW1lUmF0ZUxhYmVsKQorCisgICAgZnVuIGJpdHJhdGVGb3JRdWFsaXR5KHJlcXVlc3RlZDogSW50LCBxdWFsaXR5OiBRdWFsaXR5KTogSW50ID0gd2hlbiAocXVhbGl0eSkgeworICAgICAgICBRdWFsaXR5LlVIRCAtPiByZXF1ZXN0ZWQuY29lcmNlSW4oMThfMDAwXzAwMCwgNDVfMDAwXzAwMCkKKyAgICAgICAgUXVhbGl0eS5GSEQgLT4gcmVxdWVzdGVkLmNvZXJjZUluKDEyXzAwMF8wMDAsIDI0XzAwMF8wMDApCisgICAgICAgIFF1YWxpdHkuSEQgLT4gcmVxdWVzdGVkLmNvZXJjZUluKDVfMDAwXzAwMCwgMTRfMDAwXzAwMCkKKyAgICAgICAgUXVhbGl0eS5TRCAtPiByZXF1ZXN0ZWQuY29lcmNlSW4oMl8wMDBfMDAwLCA4XzAwMF8wMDApCisgICAgICAgIGVsc2UgLT4gcmVxdWVzdGVkLmNvZXJjZUluKDRfMDAwXzAwMCwgMjRfMDAwXzAwMCkKKyAgICB9CisKKyAgICBmdW4gcHJvYmVGaW5hbENsZWFuKGNvbnRleHQ6IENvbnRleHQsIHVyaTogVXJpPyk6IERldmVsb3BVZ2FuZGFBY3R1YWxDYXB0dXJlUHJvYmU/IHsKKyAgICAgICAgaWYgKHVyaSA9PSBudWxsIHx8IHVyaSA9PSBVcmkuRU1QVFkpIHJldHVybiBudWxsCisgICAgICAgIHJldHVybiBydW5DYXRjaGluZyB7CisgICAgICAgICAgICB2YWwgcmV0cmlldmVyID0gTWVkaWFNZXRhZGF0YVJldHJpZXZlcigpCisgICAgICAgICAgICB0cnkgeworICAgICAgICAgICAgICAgIHJldHJpZXZlci5zZXREYXRhU291cmNlKGNvbnRleHQsIHVyaSkKKyAgICAgICAgICAgICAgICBmdW4gdmFsdWUoa2V5OiBJbnQpOiBTdHJpbmc/ID0gcmV0cmlldmVyLmV4dHJhY3RNZXRhZGF0YShrZXkpCisgICAgICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYUFjdHVhbENhcHR1cmVQcm9iZSgKKyAgICAgICAgICAgICAgICAgICAgd2lkdGggPSB2YWx1ZShNZWRpYU1ldGFkYXRhUmV0cmlldmVyLk1FVEFEQVRBX0tFWV9WSURFT19XSURUSCk/LnRvSW50T3JOdWxsKCksCisgICAgICAgICAgICAgICAgICAgIGhlaWdodCA9IHZhbHVlKE1lZGlhTWV0YWRhdGFSZXRyaWV2ZXIuTUVUQURBVEFfS0VZX1ZJREVPX0hFSUdIVCk/LnRvSW50T3JOdWxsKCksCisgICAgICAgICAgICAgICAgICAgIGZyYW1lUmF0ZSA9IHZhbHVlKE1lZGlhTWV0YWRhdGFSZXRyaWV2ZXIuTUVUQURBVEFfS0VZX0NBUFRVUkVfRlJBTUVSQVRFKQorICAgICAgICAgICAgICAgICAgICAgICAgPy50b0Zsb2F0T3JOdWxsKCkKKyAgICAgICAgICAgICAgICAgICAgICAgID8udGFrZUlmIHsgaXQuaXNGaW5pdGUoKSAmJiBpdCA+IDBmIH0KKyAgICAgICAgICAgICAgICAgICAgICAgID8ubGV0IHsgKGl0ICogMTAwZikucm91bmRUb0ludCgpIC8gMTAwZiB9LAorICAgICAgICAgICAgICAgICAgICBiaXRyYXRlQnBzID0gdmFsdWUoTWVkaWFNZXRhZGF0YVJldHJpZXZlci5NRVRBREFUQV9LRVlfQklUUkFURSk/LnRvTG9uZ09yTnVsbCgpLAorICAgICAgICAgICAgICAgICAgICByb3RhdGlvbkRlZ3JlZXMgPSB2YWx1ZShNZWRpYU1ldGFkYXRhUmV0cmlldmVyLk1FVEFEQVRBX0tFWV9WSURFT19ST1RBVElPTik/LnRvSW50T3JOdWxsKCksCisgICAgICAgICAgICAgICAgICAgIG1pbWVUeXBlID0gdmFsdWUoTWVkaWFNZXRhZGF0YVJldHJpZXZlci5NRVRBREFUQV9LRVlfTUlNRVRZUEUpLAorICAgICAgICAgICAgICAgICkKKyAgICAgICAgICAgIH0gZmluYWxseSB7CisgICAgICAgICAgICAgICAgcmV0cmlldmVyLnJlbGVhc2UoKQorICAgICAgICAgICAgfQorICAgICAgICB9LmdldE9yTnVsbCgpCisgICAgfQorfQpkaWZmIC0tZ2l0IGEvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFDcmFzaFNhZmVUYWtlLmt0IGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFDcmFzaFNhZmVUYWtlLmt0CmluZGV4IDVlOWQyZGIuLjRlYzYyZWMgMTAwNjQ0Ci0tLSBhL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhQ3Jhc2hTYWZlVGFrZS5rdAorKysgYi9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUNyYXNoU2FmZVRha2Uua3QKQEAgLTI0LDYgKzI0LDcgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUNyYXNoU2FmZVRha2UoCiAgICAgdmFsIHRha2VJZDogU3RyaW5nLAogICAgIHZhbCBtb2RlOiBEZXZlbG9wVWdhbmRhQ2FtZXJhUGFnZSwKICAgICBwcml2YXRlIHZhbCBwcmVmbGlnaHRXYXJuaW5nczogTGlzdDxTdHJpbmc+ID0gZW1wdHlMaXN0KCksCisgICAgcHJpdmF0ZSB2YWwgY2FwYWJpbGl0eVN0YXRlOiBEZXZlbG9wVWdhbmRhQ2FwdHVyZUNhcGFiaWxpdHlTdGF0ZT8gPSBudWxsLAogKSB7CiAgICAgY29tcGFuaW9uIG9iamVjdCB7CiAgICAgICAgIC8qKiBBdCBtb3N0IHRoaXMgbXVjaCBvZiB0aGUgY3VycmVudCBzZWdtZW50IGlzIGV4cG9zZWQgdG8gYW4gYWJydXB0IHByb2Nlc3MgbG9zcy4gKi8KQEAgLTQ1LDYgKzQ2LDcgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUNyYXNoU2FmZVRha2UoCiAgICAgICAgICAgICB0YWtlSWQ6IFN0cmluZywKICAgICAgICAgICAgIG1vZGU6IERldmVsb3BVZ2FuZGFDYW1lcmFQYWdlLAogICAgICAgICAgICAgcHJlZmxpZ2h0V2FybmluZ3M6IExpc3Q8U3RyaW5nPiA9IGVtcHR5TGlzdCgpLAorICAgICAgICAgICAgY2FwYWJpbGl0eVN0YXRlOiBEZXZlbG9wVWdhbmRhQ2FwdHVyZUNhcGFiaWxpdHlTdGF0ZT8gPSBudWxsLAogICAgICAgICApOiBEZXZlbG9wVWdhbmRhQ3Jhc2hTYWZlVGFrZSB7CiAgICAgICAgICAgICByZXF1aXJlKHRha2VJZC5pc05vdEJsYW5rKCkpIHsgIkNyYXNoLXNhZmUgdGFrZSBpZCBpcyBibGFuayIgfQogICAgICAgICAgICAgcmV0dXJuIERldmVsb3BVZ2FuZGFDcmFzaFNhZmVUYWtlKApAQCAtNTIsNiArNTQsNyBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhQ3Jhc2hTYWZlVGFrZSgKICAgICAgICAgICAgICAgICB0YWtlSWQsCiAgICAgICAgICAgICAgICAgbW9kZSwKICAgICAgICAgICAgICAgICBwcmVmbGlnaHRXYXJuaW5ncy5kaXN0aW5jdCgpLAorICAgICAgICAgICAgICAgIGNhcGFiaWxpdHlTdGF0ZSwKICAgICAgICAgICAgICkuYWxzbyB7CiAgICAgICAgICAgICAgICAgaXQuZW5zdXJlTWFuaWZlc3QoKQogICAgICAgICAgICAgfQpAQCAtMjY2LDYgKzI2OSwxMiBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhQ3Jhc2hTYWZlVGFrZSgKICAgICAgICAgICAgIHNlZ21lbnQucHV0KCJmaW5hbGl6ZWRVdGMiLCBJbnN0YW50Lm5vdygpLnRvU3RyaW5nKCkpCiAgICAgICAgICAgICBzZWdtZW50LnB1dCgiZmluYWxpemVkV2FsbE1zIiwgU3lzdGVtLmN1cnJlbnRUaW1lTWlsbGlzKCkpCiAgICAgICAgICAgICBzZWdtZW50LnB1dCgicGxheWFibGUiLCBwbGF5YWJsZSkKKyAgICAgICAgICAgIERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2sucHJvYmVGaW5hbENsZWFuKAorICAgICAgICAgICAgICAgIGNvbnRleHQsCisgICAgICAgICAgICAgICAgdXJpLAorICAgICAgICAgICAgKT8ubGV0IHsgcHJvYmUgLT4KKyAgICAgICAgICAgICAgICBzZWdtZW50LnB1dCgiYWN0dWFsQ2FwdHVyZSIsIHByb2JlLnRvSnNvbigpKQorICAgICAgICAgICAgfQogICAgICAgICAgICAgaWYgKGhhZEVycm9yKSBzZWdtZW50LnB1dCgiZXJyb3IiLCAiQ0FNRVJBX0ZJTkFMSVpFX0VSUk9SIikKICAgICAgICAgICAgIHJvb3QucHV0KCJsYXN0U2VnbWVudFBsYXlhYmxlIiwgcGxheWFibGUpCiAgICAgICAgIH0KQEAgLTMyMiw2ICszMzEsOSBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhQ3Jhc2hTYWZlVGFrZSgKICAgICAgICAgICAgIHB1dCgic2VnbWVudHMiLCBKU09OQXJyYXkoKSkKICAgICAgICAgICAgIHB1dCgicHJlZmxpZ2h0V2FybmluZ3NQcm9jZWVkZWQiLCBKU09OQXJyYXkocHJlZmxpZ2h0V2FybmluZ3MpKQogICAgICAgICAgICAgcHV0KCJwcmVmbGlnaHRPdmVycmlkZVBvbGljeSIsICJXQVJOSU5HX09SX1VOS05PV05fUFJPQ0VFRFM7IE1FQVNVUkVEX0NSSVRJQ0FMX0ZBSUxVUkVfQkxPQ0tTIikKKyAgICAgICAgICAgIGNhcGFiaWxpdHlTdGF0ZT8ubGV0IHsKKyAgICAgICAgICAgICAgICBwdXQoImNhcGFiaWxpdHlOZWdvdGlhdGlvbiIsIGl0LnRvSnNvbigpKQorICAgICAgICAgICAgfQogICAgICAgICAgICAgcHV0KCJyYXdGcmFnbWVudHNQb2xpY3kiLCAiUFJFU0VSVkVfTkVWRVJfT1ZFUldSSVRFX09SX0RFTEVURSIpCiAgICAgICAgICAgICBwdXQoImZhc3RTdGFydEltcGxlbWVudGF0aW9uIiwgRGV2ZWxvcFVnYW5kYUZpdmVtb2RzN01wNEZhc3RTdGFydDo6Y2xhc3MuamF2YS5zaW1wbGVOYW1lKQogICAgICAgICB9CmRpZmYgLS1naXQgYS9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUZpdmVtb2RzMTJJZGVudGl0eS5rdCBiL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhRml2ZW1vZHMxMklkZW50aXR5Lmt0CmluZGV4IGMzMWI4NTIuLjYxNDViNDEgMTAwNjQ0Ci0tLSBhL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhRml2ZW1vZHMxMklkZW50aXR5Lmt0CisrKyBiL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhRml2ZW1vZHMxMklkZW50aXR5Lmt0CkBAIC0xLDYgKzEsNyBAQAogcGFja2FnZSBjb20uc2VudG9uZ29oYXJ1bmEucHVsc2UKIAogaW1wb3J0IGFuZHJvaWQuY29udGVudC5Db250ZXh0CitpbXBvcnQgYW5kcm9pZC5uZXQuVXJpCiBpbXBvcnQgYW5kcm9pZC5vcy5FbnZpcm9ubWVudAogaW1wb3J0IG9yZy5qc29uLkpTT05PYmplY3QKIGltcG9ydCBqYXZhLmlvLkZpbGUKQEAgLTEyOCw2ICsxMjksOCBAQCBvYmplY3QgRGV2ZWxvcFVnYW5kYUZpdmVtb2RzMTJJZGVudGl0eSB7CiAgICAgICAgIHZlcmlmaWVkOiBCb29sZWFuLAogICAgICAgICBkdXJhdGlvbk1zOiBMb25nLAogICAgICAgICBieXRlczogTG9uZywKKyAgICAgICAgc291cmNlVXJpOiBVcmk/ID0gbnVsbCwKKyAgICAgICAgY2FwYWJpbGl0eVN0YXRlOiBEZXZlbG9wVWdhbmRhQ2FwdHVyZUNhcGFiaWxpdHlTdGF0ZT8gPSBudWxsLAogICAgICk6IEZpbGU/ID0gcnVuQ2F0Y2hpbmcgewogICAgICAgICB2YWwgaWRlbnRpdHkgPSBmb3JQYWdlKHBhZ2UpCiAgICAgICAgIHZhbCBzdGVtID0gcHJlZml4ZWRTdGVtKHBhZ2UsIGRpc3BsYXlOYW1lLnN1YnN0cmluZ0JlZm9yZUxhc3QoJy4nKSkKQEAgLTE0OCw2ICsxNTEsMTUgQEAgb2JqZWN0IERldmVsb3BVZ2FuZGFGaXZlbW9kczEySWRlbnRpdHkgewogICAgICAgICAgICAgcHV0KCJ2ZXJpZmllZCIsIHZlcmlmaWVkKQogICAgICAgICAgICAgcHV0KCJkdXJhdGlvbk1zIiwgZHVyYXRpb25Ncy5jb2VyY2VBdExlYXN0KDBMKSkKICAgICAgICAgICAgIHB1dCgiYnl0ZXMiLCBieXRlcy5jb2VyY2VBdExlYXN0KDBMKSkKKyAgICAgICAgICAgIGNhcGFiaWxpdHlTdGF0ZT8ubGV0IHsKKyAgICAgICAgICAgICAgICBwdXQoImNhcGFiaWxpdHlOZWdvdGlhdGlvbiIsIGl0LnRvSnNvbigpKQorICAgICAgICAgICAgfQorICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5wcm9iZUZpbmFsQ2xlYW4oCisgICAgICAgICAgICAgICAgY29udGV4dCwKKyAgICAgICAgICAgICAgICBzb3VyY2VVcmksCisgICAgICAgICAgICApPy5sZXQgeworICAgICAgICAgICAgICAgIHB1dCgiYWN0dWFsQ2FwdHVyZSIsIGl0LnRvSnNvbigpKQorICAgICAgICAgICAgfQogICAgICAgICAgICAgcHV0KCJ3cml0dGVuVXRjIiwgSW5zdGFudC5ub3coKS50b1N0cmluZygpKQogICAgICAgICB9CiAgICAgICAgIHBlbmRpbmcud3JpdGVUZXh0KGpzb24udG9TdHJpbmcoMiksIENoYXJzZXRzLlVURl84KQpkaWZmIC0tZ2l0IGEvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFMZW5zSW50ZWxsaWdlbmNlLmt0IGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFMZW5zSW50ZWxsaWdlbmNlLmt0CmluZGV4IDRhZDBmYWMuLjc1NzkzOTYgMTAwNjQ0Ci0tLSBhL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhTGVuc0ludGVsbGlnZW5jZS5rdAorKysgYi9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUxlbnNJbnRlbGxpZ2VuY2Uua3QKQEAgLTExLDYgKzExLDEzIEBAIGltcG9ydCBqYXZhLnV0aWwuTG9jYWxlCiBAT3B0SW4oRXhwZXJpbWVudGFsQ2FtZXJhMkludGVyb3A6OmNsYXNzKQogb2JqZWN0IERldmVsb3BVZ2FuZGFMZW5zSW50ZWxsaWdlbmNlIHsKIAorICAgIGRhdGEgY2xhc3MgTGVuc1NlbGVjdGlvbigKKyAgICAgICAgdmFsIHNlbGVjdG9yOiBDYW1lcmFTZWxlY3RvciwKKyAgICAgICAgdmFsIHJlcXVlc3RlZExhYmVsOiBTdHJpbmcsCisgICAgICAgIHZhbCBzZWxlY3RlZExhYmVsOiBTdHJpbmcsCisgICAgICAgIHZhbCBmYWxsYmFja0FwcGxpZWQ6IEJvb2xlYW4sCisgICAgKQorCiAgICAgZGF0YSBjbGFzcyBMZW5zRGV2aWNlKAogICAgICAgICB2YWwgY2FtZXJhSWQ6IFN0cmluZywKICAgICAgICAgdmFsIGZhY2luZzogU3RyaW5nLApAQCAtMTA5LDYgKzExNiw0OSBAQCBvYmplY3QgRGV2ZWxvcFVnYW5kYUxlbnNJbnRlbGxpZ2VuY2UgewogICAgICAgICB9CiAgICAgfQogCisgICAgLyoqCisgICAgICogUmVzb2x2ZXMgYW4gZXhhY3QgY2FtZXJhIElEIGZpcnN0LCB0aGVuIHRoZSByZXF1ZXN0ZWQgZmFjaW5nLCB0aGVuIGFueQorICAgICAqIHBoeXNpY2FsIGNhbWVyYSBleHBvc2VkIGJ5IENhbWVyYVguIFVuc3VwcG9ydGVkIGxlbnMgcmVxdWVzdHMgdGhlcmVmb3JlCisgICAgICogbmVnb3RpYXRlIHRvIGEgcmVhbCBkZXZpY2UgaW5zdGVhZCBvZiBtYWtpbmcgdGhlIHdob2xlIHNlc3Npb24gZmFpbC4KKyAgICAgKi8KKyAgICBmdW4gc2VsZWN0aW9uRm9yKAorICAgICAgICBwcm92aWRlcjogUHJvY2Vzc0NhbWVyYVByb3ZpZGVyLAorICAgICAgICBjYW1lcmFJZDogU3RyaW5nPywKKyAgICAgICAgdXNlRnJvbnQ6IEJvb2xlYW4sCisgICAgKTogTGVuc1NlbGVjdGlvbiB7CisgICAgICAgIHZhbCByZXF1ZXN0ZWQgPSBjYW1lcmFJZAorICAgICAgICAgICAgPy50YWtlSWYgeyBpdC5pc05vdEJsYW5rKCkgfQorICAgICAgICAgICAgPy5sZXQgeyAiSUQgJGl0IiB9CisgICAgICAgICAgICA/OiBpZiAodXNlRnJvbnQpICJGUk9OVCIgZWxzZSAiQkFDSyIKKworICAgICAgICB2YWwgZXhhY3QgPSBjYW1lcmFJZAorICAgICAgICAgICAgPy50YWtlSWYgeyBpdC5pc05vdEJsYW5rKCkgfQorICAgICAgICAgICAgPy5sZXQgeyByZXF1ZXN0ZWRJZCAtPgorICAgICAgICAgICAgICAgIHByb3ZpZGVyLmF2YWlsYWJsZUNhbWVyYUluZm9zLmZpcnN0T3JOdWxsIHsgY2FtZXJhSWRPZihpdCkgPT0gcmVxdWVzdGVkSWQgfQorICAgICAgICAgICAgfQorICAgICAgICB2YWwgZmFjaW5nU2VsZWN0b3IgPQorICAgICAgICAgICAgaWYgKHVzZUZyb250KSBDYW1lcmFTZWxlY3Rvci5ERUZBVUxUX0ZST05UX0NBTUVSQSBlbHNlIENhbWVyYVNlbGVjdG9yLkRFRkFVTFRfQkFDS19DQU1FUkEKKyAgICAgICAgdmFsIGZhY2luZyA9IGV4YWN0ID86IHJ1bkNhdGNoaW5nIHsgcHJvdmlkZXIuZ2V0Q2FtZXJhSW5mbyhmYWNpbmdTZWxlY3RvcikgfS5nZXRPck51bGwoKQorICAgICAgICB2YWwgc2VsZWN0ZWQgPSBmYWNpbmcgPzogcHJvdmlkZXIuYXZhaWxhYmxlQ2FtZXJhSW5mb3MuZmlyc3RPck51bGwoKQorICAgICAgICAgICAgPzogZXJyb3IoIk5vIENhbWVyYVggY2FtZXJhIGlzIGF2YWlsYWJsZSIpCisgICAgICAgIHZhbCBzZWxlY3RlZERlc2NyaXB0b3IgPSBkZXNjcmlwdG9yKHNlbGVjdGVkKQorICAgICAgICB2YWwgc2VsZWN0ZWRMYWJlbCA9IHNlbGVjdGVkRGVzY3JpcHRvcj8uc2hvcnRMYWJlbCgpCisgICAgICAgICAgICA/OiBjYW1lcmFJZE9mKHNlbGVjdGVkKT8ubGV0IHsgIklEICRpdCIgfQorICAgICAgICAgICAgPzogIkRFVklDRSBDQU1FUkEiCisKKyAgICAgICAgcmV0dXJuIExlbnNTZWxlY3Rpb24oCisgICAgICAgICAgICBzZWxlY3RvciA9IHNlbGVjdGVkLmNhbWVyYVNlbGVjdG9yLAorICAgICAgICAgICAgcmVxdWVzdGVkTGFiZWwgPSByZXF1ZXN0ZWQsCisgICAgICAgICAgICBzZWxlY3RlZExhYmVsID0gc2VsZWN0ZWRMYWJlbCwKKyAgICAgICAgICAgIGZhbGxiYWNrQXBwbGllZCA9CisgICAgICAgICAgICAgICAgaWYgKCFjYW1lcmFJZC5pc051bGxPckJsYW5rKCkpIHsKKyAgICAgICAgICAgICAgICAgICAgZXhhY3QgPT0gbnVsbAorICAgICAgICAgICAgICAgIH0gZWxzZSB7CisgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkRGVzY3JpcHRvcj8uZmFjaW5nICE9IGlmICh1c2VGcm9udCkgIkZST05UIiBlbHNlICJCQUNLIgorICAgICAgICAgICAgICAgIH0sCisgICAgICAgICkKKyAgICB9CisKICAgICBmdW4gaGFzQ2FtZXJhKAogICAgICAgICBwcm92aWRlcjogUHJvY2Vzc0NhbWVyYVByb3ZpZGVyPywKICAgICAgICAgY2FtZXJhSWQ6IFN0cmluZz8KZGlmZiAtLWdpdCBhL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhTGl2ZUFjdGl2aXR5Lmt0IGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFMaXZlQWN0aXZpdHkua3QKaW5kZXggOTlkMzkwMy4uOGFiMjVkMSAxMDA2NDQKLS0tIGEvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFMaXZlQWN0aXZpdHkua3QKKysrIGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFMaXZlQWN0aXZpdHkua3QKQEAgLTIxNSw2ICsyMTUsOCBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhTGl2ZUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSB7CiAgICAgcHJpdmF0ZSB2YXIgbGl2ZUFjdGl2ZUZwc0xhYmVsID0gIkFVVE8gRlBTIgogICAgIHByaXZhdGUgdmFyIGxpdmVBY3RpdmVTdGFiaWxpemF0aW9uTGFiZWwgPSAiU1RBQiBBVVRPIgogICAgIHByaXZhdGUgdmFyIGxpdmVBY3RpdmVEeW5hbWljUmFuZ2VMYWJlbCA9ICJTRFIiCisgICAgcHJpdmF0ZSB2YXIgcjdMaXZlQ2FwYWJpbGl0eVN0YXRlOiBEZXZlbG9wVWdhbmRhQ2FwdHVyZUNhcGFiaWxpdHlTdGF0ZT8gPSBudWxsCisgICAgcHJpdmF0ZSB2YXIgcjdMaXZlRm9yY2VTYWZlUHJvZmlsZSA9IGZhbHNlCiAKICAgICBwcml2YXRlIHZhbCBwcm9maWxlcyA9CiAgICAgICAgIGFycmF5T2YoCkBAIC0yMDkyLDEyICsyMDk0LDEzIEBAIGNsYXNzIERldmVsb3BVZ2FuZGFMaXZlQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpIHsKICAgICAgICAgICAgICAgICBsaXZlQ2FtZXJhUHJvdmlkZXIgPSBwcm92aWRlcgogICAgICAgICAgICAgICAgIHByb3ZpZGVyLnVuYmluZEFsbCgpCiAKLSAgICAgICAgICAgICAgICB2YWwgc2VsZWN0b3IgPQotICAgICAgICAgICAgICAgICAgICBpZiAodXNlRnJvbnQpIHsKLSAgICAgICAgICAgICAgICAgICAgICAgIENhbWVyYVNlbGVjdG9yLkRFRkFVTFRfRlJPTlRfQ0FNRVJBCi0gICAgICAgICAgICAgICAgICAgIH0gZWxzZSB7Ci0gICAgICAgICAgICAgICAgICAgICAgICBDYW1lcmFTZWxlY3Rvci5ERUZBVUxUX0JBQ0tfQ0FNRVJBCi0gICAgICAgICAgICAgICAgICAgIH0KKyAgICAgICAgICAgICAgICB2YWwgbGVuc1NlbGVjdGlvbiA9CisgICAgICAgICAgICAgICAgICAgIERldmVsb3BVZ2FuZGFMZW5zSW50ZWxsaWdlbmNlLnNlbGVjdGlvbkZvcigKKyAgICAgICAgICAgICAgICAgICAgICAgIHByb3ZpZGVyLAorICAgICAgICAgICAgICAgICAgICAgICAgbnVsbCwKKyAgICAgICAgICAgICAgICAgICAgICAgIHVzZUZyb250LAorICAgICAgICAgICAgICAgICAgICApCisgICAgICAgICAgICAgICAgdmFsIHNlbGVjdG9yID0gbGVuc1NlbGVjdGlvbi5zZWxlY3RvcgogCiAgICAgICAgICAgICAgICAgdmFsIHNlbGVjdGVkQ2FtZXJhSW5mbyA9CiAgICAgICAgICAgICAgICAgICAgIHRyeSB7CkBAIC0yMTM4LDggKzIxNDEsMTcgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUxpdmVBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCkgewogICAgICAgICAgICAgICAgICAgICBEeW5hbWljUmFuZ2UuU0RSCiAgICAgICAgICAgICAgICAgdmFyIGVuYWJsZVZpZGVvU3RhYmlsaXphdGlvbiA9CiAgICAgICAgICAgICAgICAgICAgIGZhbHNlCi0gICAgICAgICAgICAgICAgdmFyIHNlbGVjdGVkUXVhbGl0eSA9Ci0gICAgICAgICAgICAgICAgICAgIGxpdmVTZWxlY3RlZFF1YWxpdHkoKQorICAgICAgICAgICAgICAgIHZhbCByZXF1ZXN0ZWRRdWFsaXR5ID0gbGl2ZVNlbGVjdGVkUXVhbGl0eSgpCisgICAgICAgICAgICAgICAgdmFsIHByZWZlcnJlZFF1YWxpdGllcyA9CisgICAgICAgICAgICAgICAgICAgIGlmIChyN0xpdmVGb3JjZVNhZmVQcm9maWxlKSB7CisgICAgICAgICAgICAgICAgICAgICAgICBsaXN0T2YoUXVhbGl0eS5IRCwgUXVhbGl0eS5GSEQsIFF1YWxpdHkuVUhEKQorICAgICAgICAgICAgICAgICAgICB9IGVsc2Ugd2hlbiAocmVxdWVzdGVkUXVhbGl0eSkgeworICAgICAgICAgICAgICAgICAgICAgICAgUXVhbGl0eS5VSEQgLT4gbGlzdE9mKFF1YWxpdHkuVUhELCBRdWFsaXR5LkZIRCwgUXVhbGl0eS5IRCkKKyAgICAgICAgICAgICAgICAgICAgICAgIFF1YWxpdHkuSEQgLT4gbGlzdE9mKFF1YWxpdHkuSEQsIFF1YWxpdHkuRkhELCBRdWFsaXR5LlVIRCkKKyAgICAgICAgICAgICAgICAgICAgICAgIGVsc2UgLT4gbGlzdE9mKFF1YWxpdHkuRkhELCBRdWFsaXR5LkhELCBRdWFsaXR5LlVIRCkKKyAgICAgICAgICAgICAgICAgICAgfQorICAgICAgICAgICAgICAgIHZhciBzZWxlY3RlZFF1YWxpdHkgPSBRdWFsaXR5LkhECisgICAgICAgICAgICAgICAgdmFyIGF2YWlsYWJsZVF1YWxpdGllcyA9IGVtcHR5TGlzdDxRdWFsaXR5PigpCiAKICAgICAgICAgICAgICAgICBpZiAoc2VsZWN0ZWRDYW1lcmFJbmZvICE9IG51bGwpIHsKICAgICAgICAgICAgICAgICAgICAgdHJ5IHsKQEAgLTIxNDcsOCArMjE1OSwxNSBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhTGl2ZUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUmVjb3JkZXIuZ2V0VmlkZW9DYXBhYmlsaXRpZXMoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkQ2FtZXJhSW5mbwogICAgICAgICAgICAgICAgICAgICAgICAgICAgICkKKyAgICAgICAgICAgICAgICAgICAgICAgIHZhbCBzZHJRdWFsaXRpZXMgPSBjYXBhYmlsaXRpZXMuZ2V0U3VwcG9ydGVkUXVhbGl0aWVzKER5bmFtaWNSYW5nZS5TRFIpCisgICAgICAgICAgICAgICAgICAgICAgICBhdmFpbGFibGVRdWFsaXRpZXMgPSBzZHJRdWFsaXRpZXMKKyAgICAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkUXVhbGl0eSA9IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suc2VsZWN0UXVhbGl0eSgKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICBwcmVmZXJyZWRRdWFsaXRpZXMsCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgc2RyUXVhbGl0aWVzLAorICAgICAgICAgICAgICAgICAgICAgICAgKQogCiAgICAgICAgICAgICAgICAgICAgICAgICBpZiAoCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgIXI3TGl2ZUZvcmNlU2FmZVByb2ZpbGUgJiYKICAgICAgICAgICAgICAgICAgICAgICAgICAgICBsaXZlV2FudHNIZHIoKSAmJgogICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNhcGFiaWxpdGllcy5zdXBwb3J0ZWREeW5hbWljUmFuZ2VzLmNvbnRhaW5zKAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBEeW5hbWljUmFuZ2UuSExHXzEwX0JJVApAQCAtMjE1OSwyMSArMjE3OCwxMiBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhTGl2ZUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBEeW5hbWljUmFuZ2UuSExHXzEwX0JJVAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZFF1YWxpdHkgPQotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB3aGVuIHsKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGhkclF1YWxpdGllcy5jb250YWlucygKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBRdWFsaXR5LlVIRAotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKSAtPiBRdWFsaXR5LlVIRAotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaGRyUXVhbGl0aWVzLmNvbnRhaW5zKAotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFF1YWxpdHkuRkhECi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApIC0+IFF1YWxpdHkuRkhECi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBoZHJRdWFsaXRpZXMuY29udGFpbnMoCi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUXVhbGl0eS5IRAotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKSAtPiBRdWFsaXR5LkhECi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbHNlIC0+IHNlbGVjdGVkUXVhbGl0eQotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9Ci0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICBpZiAoaGRyUXVhbGl0aWVzLmlzTm90RW1wdHkoKSkgeworICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBhdmFpbGFibGVRdWFsaXRpZXMgPSAoc2RyUXVhbGl0aWVzICsgaGRyUXVhbGl0aWVzKS5kaXN0aW5jdCgpCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkUXVhbGl0eSA9IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suc2VsZWN0UXVhbGl0eSgKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHByZWZlcnJlZFF1YWxpdGllcywKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGhkclF1YWxpdGllcywKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZER5bmFtaWNSYW5nZSA9CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBEeW5hbWljUmFuZ2UuSExHXzEwX0JJVAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBsaXZlQWN0aXZlRHluYW1pY1JhbmdlTGFiZWwgPQpAQCAtMjE4OCw2ICsyMTk4LDcgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUxpdmVBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCkgewogICAgICAgICAgICAgICAgICAgICAgICAgfQogCiAgICAgICAgICAgICAgICAgICAgICAgICBlbmFibGVWaWRlb1N0YWJpbGl6YXRpb24gPQorICAgICAgICAgICAgICAgICAgICAgICAgICAgICFyN0xpdmVGb3JjZVNhZmVQcm9maWxlICYmCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgbGl2ZVdhbnRzU3RhYmlsaXphdGlvbigpICYmCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNhcGFiaWxpdGllcy5pc1N0YWJpbGl6YXRpb25TdXBwb3J0ZWQKIApAQCAtMjIwMCw2ICsyMjExLDcgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUxpdmVBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCkgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiU1RBQiBPRkYiCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgICB9IGNhdGNoIChfOiBFeGNlcHRpb24pIHsKKyAgICAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkUXVhbGl0eSA9IFF1YWxpdHkuSEQKICAgICAgICAgICAgICAgICAgICAgICAgIGxpdmVBY3RpdmVEeW5hbWljUmFuZ2VMYWJlbCA9CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgKGxpdmVXYW50c0hkcigpKSB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJTRFIgSERSLUZBTExCQUNLIgpAQCAtMjIxMSwxOCArMjIyMywyNiBAQCBjbGFzcyBEZXZlbG9wVWdhbmRhTGl2ZUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSB7CiAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICB9CiAKKyAgICAgICAgICAgICAgICB2YWwgc2VsZWN0ZWRCaXRyYXRlID0KKyAgICAgICAgICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5iaXRyYXRlRm9yUXVhbGl0eSgKKyAgICAgICAgICAgICAgICAgICAgICAgIGxpdmVUYXJnZXRCaXRyYXRlKCksCisgICAgICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZFF1YWxpdHksCisgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICB2YWwgcmVjb3JkZXIgPQogICAgICAgICAgICAgICAgICAgICBSZWNvcmRlci5CdWlsZGVyKCkKICAgICAgICAgICAgICAgICAgICAgICAgIC5zZXRRdWFsaXR5U2VsZWN0b3IoCi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgUXVhbGl0eVNlbGVjdG9yLmZyb20oCi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkUXVhbGl0eQorICAgICAgICAgICAgICAgICAgICAgICAgICAgIFF1YWxpdHlTZWxlY3Rvci5mcm9tT3JkZXJlZExpc3QoCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIChsaXN0T2Yoc2VsZWN0ZWRRdWFsaXR5KSArIHByZWZlcnJlZFF1YWxpdGllcykuZGlzdGluY3QoKSwKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgYW5kcm9pZHguY2FtZXJhLnZpZGVvLkZhbGxiYWNrU3RyYXRlZ3kubG93ZXJRdWFsaXR5T3JIaWdoZXJUaGFuKAorICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUXVhbGl0eS5TRCwKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAuc2V0QXNwZWN0UmF0aW8oCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgQXNwZWN0UmF0aW8uUkFUSU9fMTZfOQogICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgICAgICAgLnNldFRhcmdldFZpZGVvRW5jb2RpbmdCaXRSYXRlKAotICAgICAgICAgICAgICAgICAgICAgICAgICAgIGxpdmVUYXJnZXRCaXRyYXRlKCkKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZEJpdHJhdGUKICAgICAgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICAgICAgICAgIC5idWlsZCgpCiAKQEAgLTIyODAsMzYgKzIzMDAsMjYgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUxpdmVBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCkgewogICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgICAgICAgLmJ1aWxkKCkKIAorICAgICAgICAgICAgICAgIHZhbCByZXF1ZXN0ZWRGcHMgPSBsaXZlUmVxdWVzdGVkRnBzKCkKKyAgICAgICAgICAgICAgICB2YWwgYXBwbGllZEZwc1JlcXVlc3QgPSBpZiAocjdMaXZlRm9yY2VTYWZlUHJvZmlsZSkgMCBlbHNlIHJlcXVlc3RlZEZwcworICAgICAgICAgICAgICAgIHZhciBhdmFpbGFibGVGcmFtZVJhdGVSYW5nZXMgPQorICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZENhbWVyYUluZm8/LnN1cHBvcnRlZEZyYW1lUmF0ZVJhbmdlcy5vckVtcHR5KCkudG9MaXN0KCkKKyAgICAgICAgICAgICAgICB2YXIgc2VsZWN0ZWRGcmFtZVJhdGVSYW5nZTogYW5kcm9pZC51dGlsLlJhbmdlPEludD4/ID0gbnVsbAogICAgICAgICAgICAgICAgIGlmIChzZWxlY3RlZENhbWVyYUluZm8gIT0gbnVsbCkgewotICAgICAgICAgICAgICAgICAgICB2YWwgcmVxdWVzdGVkRnBzID0KLSAgICAgICAgICAgICAgICAgICAgICAgIGxpdmVSZXF1ZXN0ZWRGcHMoKQotCi0gICAgICAgICAgICAgICAgICAgIGlmIChyZXF1ZXN0ZWRGcHMgPiAwKSB7CisgICAgICAgICAgICAgICAgICAgIGlmIChhcHBsaWVkRnBzUmVxdWVzdCA+IDApIHsKICAgICAgICAgICAgICAgICAgICAgICAgIHRyeSB7Ci0gICAgICAgICAgICAgICAgICAgICAgICAgICAgdmFsIHN1cHBvcnRlZFJhbmdlcyA9CisgICAgICAgICAgICAgICAgICAgICAgICAgICAgYXZhaWxhYmxlRnJhbWVSYXRlUmFuZ2VzID0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRDYW1lcmFJbmZvCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAuZ2V0U3VwcG9ydGVkRnJhbWVSYXRlUmFuZ2VzKAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHNlc3Npb24KLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICkKLQotICAgICAgICAgICAgICAgICAgICAgICAgICAgIHZhbCBleGFjdFJhbmdlID0KLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc3VwcG9ydGVkUmFuZ2VzLmZpcnN0T3JOdWxsIHsKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGl0Lmxvd2VyID09IHJlcXVlc3RlZEZwcyAmJgotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGl0LnVwcGVyID09IHJlcXVlc3RlZEZwcwotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApLnRvTGlzdCgpCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRGcmFtZVJhdGVSYW5nZSA9CisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2suc2VsZWN0RnJhbWVSYXRlKAorICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgYXBwbGllZEZwc1JlcXVlc3QsCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBhdmFpbGFibGVGcmFtZVJhdGVSYW5nZXMsCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICkKIAotICAgICAgICAgICAgICAgICAgICAgICAgICAgIHZhbCBjb21wYXRpYmxlUmFuZ2UgPQotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBleGFjdFJhbmdlCi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA/OiBzdXBwb3J0ZWRSYW5nZXMKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAuZmlsdGVyIHsKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaXQubG93ZXIgPD0gcmVxdWVzdGVkRnBzICYmCi0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBpdC51cHBlciA+PSByZXF1ZXN0ZWRGcHMKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9Ci0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLm1pbkJ5T3JOdWxsIHsKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaXQudXBwZXIgLSBpdC5sb3dlcgotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIH0KLQotICAgICAgICAgICAgICAgICAgICAgICAgICAgIGlmIChjb21wYXRpYmxlUmFuZ2UgIT0gbnVsbCkgeworICAgICAgICAgICAgICAgICAgICAgICAgICAgIGlmIChzZWxlY3RlZEZyYW1lUmF0ZVJhbmdlICE9IG51bGwpIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc2Vzc2lvbiA9CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBTZXNzaW9uQ29uZmlnLkJ1aWxkZXIoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcHJldmlldywKQEAgLTIzMTksMTUgKzIzMjksMTggQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUxpdmVBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCkgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBvdmVybGF5RWZmZWN0ISEKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLnNldEZyYW1lUmF0ZVJhbmdlKAotICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBjb21wYXRpYmxlUmFuZ2UKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRGcmFtZVJhdGVSYW5nZSEhCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5idWlsZCgpCiAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgbGl2ZUFjdGl2ZUZwc0xhYmVsID0KLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGlmIChleGFjdFJhbmdlICE9IG51bGwpIHsKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiJHtyZXF1ZXN0ZWRGcHN9IEZQUyIKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGlmICgKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZEZyYW1lUmF0ZVJhbmdlPy5sb3dlciA9PSBhcHBsaWVkRnBzUmVxdWVzdCAmJgorICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkRnJhbWVSYXRlUmFuZ2U/LnVwcGVyID09IGFwcGxpZWRGcHNSZXF1ZXN0CisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApIHsKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiJHthcHBsaWVkRnBzUmVxdWVzdH0gRlBTIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfSBlbHNlIHsKLSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiJHtjb21wYXRpYmxlUmFuZ2UubG93ZXJ9LSR7Y29tcGF0aWJsZVJhbmdlLnVwcGVyfSBGUFMgRkFMTEJBQ0siCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIiR7RGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5mcmFtZVJhdGVMYWJlbChzZWxlY3RlZEZyYW1lUmF0ZVJhbmdlKX0gRkFMTEJBQ0siCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgbGl2ZUFjdGl2ZUZwc0xhYmVsID0KQEAgLTIzNDMsMTIgKzIzNTYsNTkgQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUxpdmVBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCkgewogICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgfQogCi0gICAgICAgICAgICAgICAgY2FtZXJhID0KKyAgICAgICAgICAgICAgICB2YWwgbGl2ZUZhbGxiYWNrUmVhc29ucyA9IGJ1aWxkTGlzdCB7CisgICAgICAgICAgICAgICAgICAgIGlmIChyZXF1ZXN0ZWRRdWFsaXR5ICE9IHNlbGVjdGVkUXVhbGl0eSkgYWRkKCJRVUFMSVRZIikKKyAgICAgICAgICAgICAgICAgICAgaWYgKGxpdmVXYW50c0hkcigpICYmIHNlbGVjdGVkRHluYW1pY1JhbmdlID09IER5bmFtaWNSYW5nZS5TRFIpIGFkZCgiRFlOQU1JQ19SQU5HRSIpCisgICAgICAgICAgICAgICAgICAgIGlmIChsaXZlV2FudHNTdGFiaWxpemF0aW9uKCkgJiYgIWVuYWJsZVZpZGVvU3RhYmlsaXphdGlvbikgYWRkKCJTVEFCSUxJWkFUSU9OIikKKyAgICAgICAgICAgICAgICAgICAgaWYgKHJlcXVlc3RlZEZwcyA+IDAgJiYgc2VsZWN0ZWRGcmFtZVJhdGVSYW5nZT8udXBwZXIgIT0gcmVxdWVzdGVkRnBzKSBhZGQoIkZSQU1FX1JBVEUiKQorICAgICAgICAgICAgICAgICAgICBpZiAocjdMaXZlRm9yY2VTYWZlUHJvZmlsZSkgYWRkKCJCSU5EX1JFVFJZIikKKyAgICAgICAgICAgICAgICAgICAgaWYgKGxlbnNTZWxlY3Rpb24uZmFsbGJhY2tBcHBsaWVkKSBhZGQoIkxFTlMiKQorICAgICAgICAgICAgICAgIH0KKyAgICAgICAgICAgICAgICByN0xpdmVDYXBhYmlsaXR5U3RhdGUgPSBEZXZlbG9wVWdhbmRhQ2FwdHVyZUNhcGFiaWxpdHlTdGF0ZSgKKyAgICAgICAgICAgICAgICAgICAgbW9kZSA9IERldmVsb3BVZ2FuZGFDYW1lcmFQYWdlLkxJVkUubmFtZSwKKyAgICAgICAgICAgICAgICAgICAgcmVxdWVzdGVkUXVhbGl0eSA9IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2sucXVhbGl0eUxhYmVsKHJlcXVlc3RlZFF1YWxpdHkpLAorICAgICAgICAgICAgICAgICAgICBhdmFpbGFibGVRdWFsaXRpZXMgPSBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLmF2YWlsYWJsZVF1YWxpdHlMYWJlbHMoCisgICAgICAgICAgICAgICAgICAgICAgICBhdmFpbGFibGVRdWFsaXRpZXMsCisgICAgICAgICAgICAgICAgICAgICksCisgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkUXVhbGl0eSA9IERldmVsb3BVZ2FuZGFDYW1lcmFDYXBhYmlsaXR5RmFsbGJhY2sucXVhbGl0eUxhYmVsKHNlbGVjdGVkUXVhbGl0eSksCisgICAgICAgICAgICAgICAgICAgIHJlcXVlc3RlZEZwcyA9IHJlcXVlc3RlZEZwcy50YWtlSWYgeyBpdCA+IDAgfSwKKyAgICAgICAgICAgICAgICAgICAgYXZhaWxhYmxlRnBzUmFuZ2VzID0gRGV2ZWxvcFVnYW5kYUNhbWVyYUNhcGFiaWxpdHlGYWxsYmFjay5hdmFpbGFibGVGcmFtZVJhdGVMYWJlbHMoCisgICAgICAgICAgICAgICAgICAgICAgICBhdmFpbGFibGVGcmFtZVJhdGVSYW5nZXMsCisgICAgICAgICAgICAgICAgICAgICksCisgICAgICAgICAgICAgICAgICAgIHNlbGVjdGVkRnBzUmFuZ2UgPSBEZXZlbG9wVWdhbmRhQ2FtZXJhQ2FwYWJpbGl0eUZhbGxiYWNrLmZyYW1lUmF0ZUxhYmVsKAorICAgICAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRGcmFtZVJhdGVSYW5nZSwKKyAgICAgICAgICAgICAgICAgICAgKSwKKyAgICAgICAgICAgICAgICAgICAgcmVxdWVzdGVkRHluYW1pY1JhbmdlID0gaWYgKGxpdmVXYW50c0hkcigpKSAiSExHMTAgSERSIiBlbHNlICJTRFIiLAorICAgICAgICAgICAgICAgICAgICBzZWxlY3RlZER5bmFtaWNSYW5nZSA9IGlmIChzZWxlY3RlZER5bmFtaWNSYW5nZSA9PSBEeW5hbWljUmFuZ2UuSExHXzEwX0JJVCkgIkhMRzEwIEhEUiIgZWxzZSAiU0RSIiwKKyAgICAgICAgICAgICAgICAgICAgcmVxdWVzdGVkU3RhYmlsaXphdGlvbiA9IGxpdmVXYW50c1N0YWJpbGl6YXRpb24oKSwKKyAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRTdGFiaWxpemF0aW9uID0gZW5hYmxlVmlkZW9TdGFiaWxpemF0aW9uLAorICAgICAgICAgICAgICAgICAgICByZXF1ZXN0ZWRMZW5zID0gbGVuc1NlbGVjdGlvbi5yZXF1ZXN0ZWRMYWJlbCwKKyAgICAgICAgICAgICAgICAgICAgc2VsZWN0ZWRMZW5zID0gbGVuc1NlbGVjdGlvbi5zZWxlY3RlZExhYmVsLAorICAgICAgICAgICAgICAgICAgICBmYWxsYmFja1JlYXNvbnMgPSBsaXZlRmFsbGJhY2tSZWFzb25zLAorICAgICAgICAgICAgICAgICkKKworICAgICAgICAgICAgICAgIGNhbWVyYSA9IHRyeSB7CiAgICAgICAgICAgICAgICAgICAgIHByb3ZpZGVyLmJpbmRUb0xpZmVjeWNsZSgKICAgICAgICAgICAgICAgICAgICAgICAgIHRoaXMsCiAgICAgICAgICAgICAgICAgICAgICAgICBzZWxlY3RvciwKLSAgICAgICAgICAgICAgICAgICAgICAgIHNlc3Npb24KKyAgICAgICAgICAgICAgICAgICAgICAgIHNlc3Npb24sCiAgICAgICAgICAgICAgICAgICAgICkKKyAgICAgICAgICAgICAgICB9IGNhdGNoIChfOiBFeGNlcHRpb24pIHsKKyAgICAgICAgICAgICAgICAgICAgaWYgKCFyN0xpdmVGb3JjZVNhZmVQcm9maWxlKSB7CisgICAgICAgICAgICAgICAgICAgICAgICByN0xpdmVGb3JjZVNhZmVQcm9maWxlID0gdHJ1ZQorICAgICAgICAgICAgICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYVYyNzZSZWNvcmRpbmdTYWZldHkuYWRkRXZlbnQoCisgICAgICAgICAgICAgICAgICAgICAgICAgICAgdGhpcywKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAiQ0FQQUJJTElUWSBGQUxMQkFDSyDigKIgTElWRSBCSU5EIFJFVFJZIOKAoiBTRFIgSEQgQVVUTyBGUFMiLAorICAgICAgICAgICAgICAgICAgICAgICAgKQorICAgICAgICAgICAgICAgICAgICAgICAgcHJvdmlkZXIudW5iaW5kQWxsKCkKKyAgICAgICAgICAgICAgICAgICAgICAgIGJpbmRDYW1lcmEoKQorICAgICAgICAgICAgICAgICAgICAgICAgcmV0dXJuQGFkZExpc3RlbmVyCisgICAgICAgICAgICAgICAgICAgIH0KKyAgICAgICAgICAgICAgICAgICAgcjdMaXZlRm9yY2VTYWZlUHJvZmlsZSA9IGZhbHNlCisgICAgICAgICAgICAgICAgICAgIHRvYXN0KCJMSVZFIGNhbWVyYSBpcyB1bmF2YWlsYWJsZSIpCisgICAgICAgICAgICAgICAgICAgIHJldHVybkBhZGRMaXN0ZW5lcgorICAgICAgICAgICAgICAgIH0KKyAgICAgICAgICAgICAgICByN0xpdmVGb3JjZVNhZmVQcm9maWxlID0gZmFsc2UKIAogICAgICAgICAgICAgICAgIGNhbWVyYQogICAgICAgICAgICAgICAgICAgICA/LmNhbWVyYUluZm8KQEAgLTQ5MjcsNiArNDk4Nyw4IEBAIGNsYXNzIERldmVsb3BVZ2FuZGFMaXZlQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZjEyU2FmZXR5UmVzdWx0Lm9rLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBldmVudC5yZWNvcmRpbmdTdGF0cy5yZWNvcmRlZER1cmF0aW9uTmFub3MgLyAxXzAwMF8wMDBMLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBldmVudC5yZWNvcmRpbmdTdGF0cy5udW1CeXRlc1JlY29yZGVkLAorICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBldmVudC5vdXRwdXRSZXN1bHRzLm91dHB1dFVyaSwKKyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcjdMaXZlQ2FwYWJpbGl0eVN0YXRlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgICAgICAgICAgIH0KIApAQCAtNTQ1Niw3ICs1NTE4LDggQEAgY2xhc3MgRGV2ZWxvcFVnYW5kYUxpdmVBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCkgewogICAgICAgICB2YWwgZjEyU3RhdHVzID0gRGV2ZWxvcFVnYW5kYUJyb2FkY2FzdFN0YXR1cygKICAgICAgICAgICAgICAgICAvLyBMSVZFIHByZWRhdGVzIGFkZGl0aXZlIHByb2ZpbGUgZGF0YTsgcmVwb3J0IG9ubHkgdGhlIGFjdHVhbAogICAgICAgICAgICAgICAgIC8vIHNlbGVjdGVkIHF1YWxpdHkgYW5kIHJhdGUgbGFiZWxzIGFscmVhZHkgbWFpbnRhaW5lZCBoZXJlLgotICAgICAgICAgICAgICAgIGZvcm1hdCA9ICIkcXVhbGl0eUxhYmVsIOKAoiAkbGl2ZUFjdGl2ZUZwc0xhYmVsIiwKKyAgICAgICAgICAgICAgICBmb3JtYXQgPSByN0xpdmVDYXBhYmlsaXR5U3RhdGU/LmNvbXBhY3RMYWJlbCgpCisgICAgICAgICAgICAgICAgICAgID86ICIkcXVhbGl0eUxhYmVsIOKAoiAkbGl2ZUFjdGl2ZUZwc0xhYmVsIiwKICAgICAgICAgICAgICAgICBjb2RlYyA9IG51bGwsCiAgICAgICAgICAgICAgICAgdGltZWNvZGUgPSBsaXZlVGltZWNvZGUoKSwKICAgICAgICAgICAgICAgICBiYXR0ZXJ5ID0gcGVyY2VudC50YWtlSWYgeyBpdCBpbiAwLi4xMDAgfSwK' | base64 -d > /tmp/r7-section2.patch
+          git apply --check /tmp/r7-section2.patch
+          git apply /tmp/r7-section2.patch
+
+      - name: R7 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("app/src")
+          helper = (root / "main/java/com/sentongoharuna/pulse/DevelopUgandaCameraCapabilityFallback.kt").read_text()
+          camera = (root / "main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt").read_text()
+          live = (root / "main/java/com/sentongoharuna/pulse/DevelopUgandaLiveActivity.kt").read_text()
+          lens = (root / "main/java/com/sentongoharuna/pulse/DevelopUgandaLensIntelligence.kt").read_text()
+          identity = (root / "main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12Identity.kt").read_text()
+          crash = (root / "main/java/com/sentongoharuna/pulse/DevelopUgandaCrashSafeTake.kt").read_text()
+          tests = (root / "androidTest/java/com/sentongoharuna/pulse/DevelopUgandaFiveModeInstrumentation.kt").read_text()
+          nav = (root / "main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt").read_text()
+
+          for token in (
+              "data class DevelopUgandaCaptureCapabilityState",
+              "fun compactLabel()",
+              "fun selectQuality(",
+              "fun selectFrameRate(",
+              "fun probeFinalClean(",
+              'put("fallbackReasons", JSONArray(fallbackReasons))',
+              '"MEASURED_FROM_FINAL_CLEAN_FILE"',
+          ):
+              assert token in helper, token
+
+          assert "mode = currentCameraPage().name" in camera
+          assert "DevelopUgandaCameraPage.INTERVIEW" in camera
+          assert "r7CapabilityState = DevelopUgandaCaptureCapabilityState(" in camera
+          assert "r7ForceSafeProfile = true" in camera
+          assert "videoBuilder.setTargetFrameRate(frameRateRange)" in camera
+          assert "r7CapabilityState?.compactLabel()" in camera
+          assert camera.count("DevelopUgandaCameraCapabilityFallback.selectFrameRate(") >= 3
+          assert camera.count("DevelopUgandaLensIntelligence.selectionFor(") == 1
+
+          assert "mode = DevelopUgandaCameraPage.LIVE.name" in live
+          assert "r7LiveCapabilityState = DevelopUgandaCaptureCapabilityState(" in live
+          assert "r7LiveForceSafeProfile = true" in live
+          assert "QualitySelector.fromOrderedList(" in live
+          assert ".setFrameRateRange(" in live
+          assert "r7LiveCapabilityState?.compactLabel()" in live
+          assert "DevelopUgandaLensIntelligence.selectionFor(" in live
+
+          assert "data class LensSelection(" in lens
+          assert "fun selectionFor(" in lens
+          assert 'fallbackApplied =' in lens
+
+          for source in (identity, crash):
+              assert 'put("capabilityNegotiation", it.toJson())' in source
+              assert 'put("actualCapture",' in source
+          assert "r7CapabilityState," in camera
+          assert "r7LiveCapabilityState," in live
+          assert "capabilityFallbackStepsDownInsteadOfRefusing" in tests
+
+          # Section 1 remains frozen in R7.
+          assert "translationY = dp(10).toFloat()" in nav
+          assert camera.count("r5SetRecordPulse(true)") == 1
+          assert "r6ApplyRecordSurface(r6RecordingVisualActive)" in camera
+          print("R7 VERIFIED • FIVE-MODE FALLBACK • REQ/AV/ACT • ACTUAL CLEAN METADATA")
+          PY
+
+      - name: Verify protected contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          grep -q 'tag = "f12_status_strip"' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt
+          grep -q 'recordButton.setOnTouchListener' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+
+      - name: Unit tests and APK build
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="R7-SECTION2-CAPABILITY-FALLBACK-${GITHUB_RUN_NUMBER}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R7-SECTION2-CAPABILITY-FALLBACK-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
