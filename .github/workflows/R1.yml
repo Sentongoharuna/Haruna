@@ -1,0 +1,161 @@
+name: R1
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+permissions:
+  contents: read
+concurrency:
+  group: r1-bottom-ui
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Apply bottom UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          a,n=map(Path,sys.argv[1:3])
+          s=a.read_text()
+          nav=n.read_text()
+
+          old="""        actionRow.addView(
+            lensButton,
+            wrap(82, 46)
+        )
+        actionRow.addView(
+            space(dp(8)),
+            wrap(8, 1)
+        )
+        actionRow.addView(
+            reportRecordArea,
+            wrap(150, 62)
+        )
+        actionRow.addView(
+            space(dp(8)),
+            wrap(8, 1)
+        )
+        actionRow.addView(
+            torchButton,
+            wrap(82, 46)
+        )
+"""
+          new="""        // R1: shutter alone above bottom mode icons.
+        recordButton.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(14).toFloat()
+            setColor(DevelopUgandaFivemods8Theme.record)
+            setStroke(dp(1), DevelopUgandaFivemods8Theme.content)
+        }
+        recordButton.setTextColor(DevelopUgandaFivemods8Theme.content)
+        recordButton.text = "●"
+        actionRow.addView(
+            reportRecordArea,
+            wrap(150, 62)
+        )
+"""
+          if old not in s:
+              raise SystemExit("R1 STOP: current Lens/shutter/Light block not found")
+          s=s.replace(old,new,1)
+
+          checks=[
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceScrim(240))",
+             "setBackgroundColor(Color.TRANSPARENT)"),
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.outlineScrim(53))",
+             "setBackgroundColor(Color.TRANSPARENT)"),
+            ("translationY = dp(10).toFloat()","translationY = 0f"),
+            ("setPadding(dp(8), dp(4), dp(8), dp(4))","setPadding(dp(8), 0, dp(8), 0)"),
+            ("canvas.drawText(code, width * 0.5f, height * 0.98f, codePaint)",
+             "// R1: icons only; no mode labels.")
+          ]
+          for before,after in checks:
+              if before not in nav:
+                  raise SystemExit("R1 STOP: navigator source mismatch: "+before)
+              nav=nav.replace(before,after,1)
+
+          active="""if (active) {
+                DevelopUgandaFivemods8Theme.surfaceRaised
+            } else {
+                DevelopUgandaFivemods8Theme.transparent
+            }"""
+          if active in nav:
+              nav=nav.replace(active,"DevelopUgandaFivemods8Theme.transparent",1)
+
+          # Keep five equal functional touch zones and dots; place them at safe bottom.
+          nav=nav.replace("dp(56),\n                Gravity.BOTTOM",
+                          "dp(58),\n                Gravity.BOTTOM",1)
+          nav=nav.replace("dp(48),\n                    1f",
+                          "dp(54),\n                    1f",1)
+
+          a.write_text(s)
+          n.write_text(nav)
+          PY
+
+      - name: Reject old boxed layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          grep -q 'R1: shutter alone' "$A"
+          grep -q 'recordButton.text = "●"' "$A"
+          grep -q 'R1: icons only' "$N"
+          grep -q 'setBackgroundColor(Color.TRANSPARENT)' "$N"
+          grep -q 'CAMERA_HANDOFF_SETTLE_MS = 850L' "$N"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          a=Path(sys.argv[1]).read_text()
+          n=Path(sys.argv[2]).read_text()
+          p=a.index("actionRow = row().apply")
+          q=a.index("bottomDeck.addView(actionRow)",p)
+          b=a[p:q]
+          assert "actionRow.addView(\n            lensButton" not in b
+          assert "actionRow.addView(\n            torchButton" not in b
+          assert "reportRecordArea" in b
+          assert "surfaceScrim(240)" not in n
+          assert "canvas.drawText(code," not in n
+          print("R1 ACCEPTANCE CHECK PASSED")
+          PY
+
+      - name: Verify contracts
+        run: python3 ci/verify_source_contracts.py
+      - name: Unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Build APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="R1-${GITHUB_RUN_NUMBER}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R1-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
