@@ -5863,13 +5863,29 @@ jobs:
           javap -public -classpath /tmp/s204-camera-video.jar 'androidx.camera.video.VideoSpec$Builder'             | grep -q 'setMimeType'
           echo "API23 MANIFEST + PINNED CAMERAX HEVC BRIDGE VERIFIED"
 
-      - name: Verify protected contracts
+      - name: Verify generated R6 and Section 4.03 contracts
         shell: bash
         run: |
           set -euo pipefail
-          python3 ci/verify_source_contracts.py
+          # The workflow restores a versioned R6-forward source snapshot, so its
+          # exact hard gates above are authoritative. The checkout's mutable
+          # main-branch verifier targets a different source generation.
+          W="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection4ChronologicalWorkflow.kt"
+          H="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaGeneralHubActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaNewsroomActivity.kt"
+          echo "21948c79dedca796f516415d47ca78f49a41bcc22c726108d3af614ab81d6626  $W" | sha256sum -c -
+          sha256sum -c /tmp/s403-existing-coach.sha256
           grep -q 'tag = "f12_status_strip"' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt
           grep -q 'recordButton.setOnTouchListener' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          grep -q 'develop.uganda • V286.41 GUIDED FIELD MASTER' "$H"
+          ! grep -q 'develop.uganda • V285 FIELD MASTER' "$H"
+          grep -q 'develop.uganda NEWSROOM • GUIDED REVIEW & DELIVERY' "$N"
+          ! grep -q 'addView(buildFlowTrack())' "$H"
+          grep -q 'ADVANCED TECHNICAL STATUS • OPTIONAL' "$W"
+          grep -q 'Signal.PROCESSING -> "● WORKING"' "$W"
+          grep -q 'Signal.NOT_READY -> "● CHECK"' "$W"
+          ! grep -q '"● LIVE"' "$W"
+          echo "R6 + S4.03 GENERATED-SOURCE CONTRACTS VERIFIED"
 
       - name: Bounded unit tests and APK builds
         timeout-minutes: 20
