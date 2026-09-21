@@ -1,0 +1,1378 @@
+name: R6 SECTION2 03 - TIKTOK R60 ENGINE ONLY
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [".github/workflows/00-R6-SECTION2-03-TIKTOK-R60-ENGINE-ONLY.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: r6-section2-03-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore exact proven R9 clean base
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://raw.githubusercontent.com/Sentongoharuna/Haruna/8883a1402fb10bb2234b8e3f7cf1a7a26609b533/.github/workflows/00-SECTION1-R9-CLEAR-UI-REAL-SOURCE.yml"
+          curl --fail --location --retry 3 --connect-timeout 15 "$URL" -o /tmp/proven-r9.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,base64
+          y=Path("/tmp/proven-r9.yml").read_text()
+          m=re.search(r"echo '([A-Za-z0-9+/=]+)' \| base64 -d > /tmp/r9_patch.py",y)
+          if not m: raise SystemExit("PROVEN R9 PATCH PAYLOAD NOT FOUND")
+          Path("/tmp/r9_patch.py").write_bytes(base64.b64decode(m.group(1)))
+          PY
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          B="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          python3 /tmp/r9_patch.py "$A" "$B"
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+
+      - name: Apply R9-2 R9-4 and R9-5 refinements
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          F12="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt"
+          python3 - "$A" "$F12" <<'PY'
+          from pathlib import Path
+          import sys,re
+          a=Path(sys.argv[1]); s=a.read_text()
+          f=Path(sys.argv[2]); u=f.read_text()
+
+          # R9-2: dot-only shutter.
+          s=s.replace('"● RECORD"','"●"').replace('"● PHOTO"','"●"')
+
+          # R9-4: compact F12 strip and suppress duplicate narration.
+          u=u.replace("setPadding(dp(6), dp(4), dp(6), dp(4))","setPadding(dp(4), dp(2), dp(4), dp(2))",1)
+          u=u.replace("LinearLayout.LayoutParams(0, dp(22), 1f)","LinearLayout.LayoutParams(0, dp(18), 1f)")
+          u=u.replace("LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(22))","LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(18))")
+          marker="        f12CameraShell?.updateBroadcastStatus(f12Status)\n"
+          if marker in s:
+              s=s.replace(marker,marker+"        if (::previewNarrationPanel.isInitialized) previewNarrationPanel.visibility = View.GONE\n",1)
+
+          # R9-5: true bare circular shutter. No rectangular backing.
+          start=s.find("    private fun makeRecordButton(): Button {")
+          end=s.find("    private fun space(width: Int): View {",start)
+          if start<0 or end<0: raise SystemExit("record button function missing")
+          b=s[start:end]
+          b=re.sub(r'minWidth = dp\(\d+\)', 'minWidth = dp(72)', b)
+          b=re.sub(r'minHeight = dp\(\d+\)', 'minHeight = dp(72)', b)
+          b=re.sub(r'minimumWidth = dp\(\d+\)', 'minimumWidth = dp(72)', b)
+          b=re.sub(r'minimumHeight = dp\(\d+\)', 'minimumHeight = dp(72)', b)
+          b=b.replace("shape = GradientDrawable.RECTANGLE","shape = GradientDrawable.OVAL")
+          b=re.sub(r'\s*cornerRadius\s*=.*\n','\n',b)
+          s=s[:start]+b+s[end:]
+
+          # Remove solid navigator backing globally only where it uses theme surface;
+          # child icons and listeners are untouched.
+          s=s.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.surface)","setBackgroundColor(DevelopUgandaFivemods8Theme.transparent)")
+          s=s.replace("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceRaised)","setBackgroundColor(DevelopUgandaFivemods8Theme.transparent)")
+
+          a.write_text(s); f.write_text(u)
+          PY
+          grep -q 'r9_live_style_record' "$A"
+          grep -q 'recordButton.setOnTouchListener' "$A"
+          ! grep -q '"● RECORD"' "$A"
+          ! grep -q '"● PHOTO"' "$A"
+          echo "R9-5 FINAL CLEAN TRANSPORT VERIFIED"
+
+      - name: R4 preserve corrected bottom layout after R9-5
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          a=Path(sys.argv[1]); n=Path(sys.argv[2])
+          s=a.read_text(); nav=n.read_text()
+
+          # Anchor specifically inside the visible v237 action row.
+          row=s.find('tag = "v237_camera_action_row"')
+          if row < 0: raise SystemExit("R4 STOP: action-row anchor missing")
+          start=s.find("        actionRow.addView(",row)
+          end=s.find("        bottomDeck.addView(actionRow)",start)
+          if start < 0 or end < 0: raise SystemExit("R4 STOP: action-row children missing")
+          old=s[start:end]
+          if not all(x in old for x in ("lensButton","reportRecordArea","torchButton")):
+              raise SystemExit("R4 STOP: unexpected visible action row")
+
+          new = (
+              "        // R4: shutter alone above five icons.\n"
+              "        actionRow.addView(\n"
+              "            reportRecordArea,\n"
+              "            wrap(150, 62)\n"
+              "        )\n\n"
+          )
+          s=s[:start]+new+s[end:]
+
+          # R9-5 intentionally made shutter circular; change only this final geometry.
+          f0=s.find("    private fun makeRecordButton(): Button {")
+          f1=s.find("    private fun space(width: Int): View {",f0)
+          if f0 < 0 or f1 < 0: raise SystemExit("R4 STOP: makeRecordButton missing")
+          f=s[f0:f1]
+          f=f.replace("shape = GradientDrawable.OVAL","shape = GradientDrawable.RECTANGLE")
+          if "shape = GradientDrawable.RECTANGLE" not in f:
+              raise SystemExit("R4 STOP: rectangle conversion failed")
+          if "cornerRadius" not in f:
+              f=f.replace("shape = GradientDrawable.RECTANGLE",
+                          "shape = GradientDrawable.RECTANGLE\n                    cornerRadius = dp(14).toFloat()",1)
+          s=s[:f0]+f+s[f1:]
+          s=s.replace('"● RECORD"','"●"').replace('"● PHOTO"','"●"')
+
+          # Remove the navigator panel and labels, preserving five click targets and 850ms handoff.
+          pairs=[
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.surfaceScrim(240))","setBackgroundColor(Color.TRANSPARENT)"),
+            ("setBackgroundColor(DevelopUgandaFivemods8Theme.outlineScrim(53))","setBackgroundColor(Color.TRANSPARENT)"),
+            ("translationY = dp(10).toFloat()","translationY = 0f"),
+            ("setPadding(dp(8), dp(4), dp(8), dp(4))","setPadding(dp(8), 0, dp(8), 0)"),
+            ("canvas.drawText(code, width * 0.5f, height * 0.98f, codePaint)","// R4 icon only; dot retained.")
+          ]
+          for before,after in pairs:
+              if before not in nav: raise SystemExit("R4 STOP: navigator anchor missing: "+before)
+              nav=nav.replace(before,after,1)
+
+          active = '''if (active) {
+                DevelopUgandaFivemods8Theme.surfaceRaised
+            } else {
+                DevelopUgandaFivemods8Theme.transparent
+            }'''
+          if active in nav:
+              nav=nav.replace(active,"DevelopUgandaFivemods8Theme.transparent",1)
+
+          a.write_text(s); n.write_text(nav)
+          PY
+
+      - name: R4 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text(); n=Path(sys.argv[2]).read_text()
+          row=s.index('tag = "v237_camera_action_row"')
+          start=s.index("actionRow.addView(",row)
+          end=s.index("bottomDeck.addView(actionRow)",start)
+          b=s[start:end]
+          assert b.count("actionRow.addView(")==1
+          assert "reportRecordArea" in b
+          assert "lensButton" not in b
+          assert "torchButton" not in b
+          f0=s.index("private fun makeRecordButton(): Button")
+          f1=s.index("private fun space(width: Int): View",f0)
+          f=s[f0:f1]
+          assert "GradientDrawable.RECTANGLE" in f
+          assert "GradientDrawable.OVAL" not in f
+          assert "surfaceScrim(240)" not in n
+          assert "outlineScrim(53)" not in n
+          assert "canvas.drawText(code," not in n
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in n
+          print("R4 VERIFIED")
+          PY
+          ! grep -q '"● RECORD"' "$A"
+          ! grep -q '"● PHOTO"' "$A"
+
+      - name: R5 extreme-bottom icons and real recording pulse
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+
+          a=Path(sys.argv[1]); n=Path(sys.argv[2])
+          s=a.read_text(); nav=n.read_text()
+
+          # R4 moved the icon strip 10dp upward. Restore the source's proven
+          # lower offset so the five icons sit at the extreme safe bottom.
+          bottom_old="                translationY = 0f"
+          bottom_new="""                // R5: five mode icons at the extreme safe bottom.
+                          translationY = dp(10).toFloat()"""
+          if nav.count(bottom_old) != 1:
+              raise SystemExit("R5 STOP: exact R4 navigator offset missing")
+          nav=nav.replace(bottom_old,bottom_new,1)
+
+          field_anchor='    private var recordStartUtc = "--"\n'
+          if s.count(field_anchor) != 1:
+              raise SystemExit("R5 STOP: record state field anchor missing")
+          s=s.replace(
+              field_anchor,
+              field_anchor + '''
+
+              // R5 owns only the visual recording pulse; CameraX remains the truth.
+              private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null
+          ''',
+              1
+          )
+
+          helper_anchor="    private fun makeRecordButton(): Button {"
+          if s.count(helper_anchor) != 1:
+              raise SystemExit("R5 STOP: makeRecordButton anchor missing")
+          helper='''    private fun r5SetRecordPulse(recordingNow: Boolean) {
+                  if (!::recordButton.isInitialized) return
+          
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+                  recordButton.animate().cancel()
+                  uiHandler.removeCallbacks(v257HomeMotionRunnable)
+          
+                  recordButton.alpha = 1f
+                  recordButton.scaleX = 1f
+                  recordButton.scaleY = 1f
+                  recordButton.elevation = 0f
+                  recordButton.background = GradientDrawable().apply {
+                      shape = GradientDrawable.RECTANGLE
+                      cornerRadius = dp(14).toFloat()
+                      setColor(
+                          if (recordingNow) {
+                              DevelopUgandaFivemods8Theme.record
+                          } else {
+                              DevelopUgandaFivemods8Theme.transparent
+                          }
+                      )
+                      setStroke(
+                          dp(if (recordingNow) 3 else 2),
+                          DevelopUgandaFivemods8Theme.record
+                      )
+                  }
+                  recordButton.setTextColor(DevelopUgandaFivemods8Theme.content)
+          
+                  if (::reportRecordState.isInitialized) {
+                      reportRecordState.animate().cancel()
+                      reportRecordState.alpha = 1f
+                      reportRecordState.scaleX = 1f
+                      reportRecordState.scaleY = 1f
+                      reportRecordState.setRecordingState(recordingNow)
+                  }
+          
+                  if (recordingNow) {
+                      val buttonPulse = android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                          recordButton,
+                          android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.72f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.045f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.045f)
+                      ).apply {
+                          duration = 720L
+                          repeatCount = android.animation.ValueAnimator.INFINITE
+                          repeatMode = android.animation.ValueAnimator.REVERSE
+                      }
+                      val haloPulse =
+                          if (::reportRecordState.isInitialized) {
+                              android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                                  reportRecordState,
+                                  android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.38f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.08f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.08f)
+                              ).apply {
+                                  duration = 720L
+                                  repeatCount = android.animation.ValueAnimator.INFINITE
+                                  repeatMode = android.animation.ValueAnimator.REVERSE
+                              }
+                          } else {
+                              null
+                          }
+                      r5RecordPulseAnimator = android.animation.AnimatorSet().apply {
+                          if (haloPulse == null) playTogether(buttonPulse) else playTogether(buttonPulse, haloPulse)
+                          start()
+                      }
+                  } else {
+                      v257UpdateHomeMotionLoop()
+                  }
+              }
+          
+          '''
+          s=s.replace(helper_anchor,helper+helper_anchor,1)
+
+          start_old='''                            recordButton.text = "■ STOP"
+                                      recordButton.isEnabled = true'''
+          start_new='''                            recordButton.text = "■ STOP"
+                                      // Actual CameraX Start event owns the red pulse.
+                                      r5SetRecordPulse(true)
+                                      recordButton.isEnabled = true'''
+          if s.count(start_old) != 1:
+              raise SystemExit("R5 STOP: CameraX Start UI anchor missing")
+          s=s.replace(start_old,start_new,1)
+
+          finalize_old='''                            recording = null
+                                      recordButton.text = "●"
+                                      recordButton.isEnabled = true'''
+          finalize_new='''                            recording = null
+                                      r5SetRecordPulse(false)
+                                      recordButton.text = "●"
+                                      recordButton.isEnabled = true'''
+          if s.count(finalize_old) != 1:
+              raise SystemExit("R5 STOP: CameraX Finalize UI anchor missing")
+          s=s.replace(finalize_old,finalize_new,1)
+
+          ready_old='''                reportRecordState.setRecordingState(
+                              false
+                          )
+                      }
+
+                      refreshHud()'''
+          ready_new='''                reportRecordState.setRecordingState(
+                              false
+                          )
+                      }
+                      r5SetRecordPulse(false)
+
+                      refreshHud()'''
+          if s.count(ready_old) != 1:
+              raise SystemExit("R5 STOP: camera-ready idle anchor missing")
+          s=s.replace(ready_old,ready_new,1)
+
+          failure_old='''            recording = null
+                      recorderCoreFailure("START", failure)
+                      recordButton.text = "●"
+                      recordButton.isEnabled = true'''
+          failure_new='''            recording = null
+                      recorderCoreFailure("START", failure)
+                      r5SetRecordPulse(false)
+                      recordButton.text = "●"
+                      recordButton.isEnabled = true'''
+          if s.count(failure_old) != 1:
+              raise SystemExit("R5 STOP: recording-start failure anchor missing")
+          s=s.replace(failure_old,failure_new,1)
+
+          destroy_old='''        uiHandler.removeCallbacksAndMessages(
+                      null
+                  )
+
+                  if ('''
+          destroy_new='''        uiHandler.removeCallbacksAndMessages(
+                      null
+                  )
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+
+                  if ('''
+          if s.count(destroy_old) != 1:
+              raise SystemExit("R5 STOP: onDestroy cleanup anchor missing")
+          s=s.replace(destroy_old,destroy_new,1)
+
+          a.write_text(s); n.write_text(nav)
+          PY
+
+      - name: R5 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text(); nav=Path(sys.argv[2]).read_text()
+          assert "R5: five mode icons at the extreme safe bottom" in nav
+          assert "translationY = dp(10).toFloat()" in nav
+          assert "private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null" in s
+          assert "private fun r5SetRecordPulse(recordingNow: Boolean)" in s
+          assert "setColor(\n                if (recordingNow)" in s
+          assert "DevelopUgandaFivemods8Theme.record" in s
+          assert "Actual CameraX Start event owns the red pulse" in s
+          assert s.count("r5SetRecordPulse(true)") == 1
+          assert s.count("r5SetRecordPulse(false)") >= 3
+          assert "repeatCount = android.animation.ValueAnimator.INFINITE" in s
+          assert "r5RecordPulseAnimator?.cancel()" in s
+          start=s.index("is VideoRecordEvent.Start")
+          final=s.index("is VideoRecordEvent.Finalize")
+          assert start < s.index("r5SetRecordPulse(true)",start) < final
+          assert s.index("r5SetRecordPulse(false)",final) > final
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in nav
+          print("R5 VERIFIED • EXTREME BOTTOM • REAL START RED PULSE")
+          PY
+
+      - name: R6 defeat button tint and persist the recording surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          python3 - "$A" <<'PY'
+          from pathlib import Path
+          import sys
+
+          a = Path(sys.argv[1])
+          s = a.read_text()
+
+          # Android's Button theme tint was recolouring R5's custom drawable.
+          # Keep a CameraX-owned visual state and explicitly own the tint.
+          field_old = "    private var r5RecordPulseAnimator: android.animation.AnimatorSet? = null\n"
+          field_new = field_old + "    private var r6RecordingVisualActive = false\n"
+          if s.count(field_old) != 1:
+              raise SystemExit("R6 STOP: R5 animator field missing")
+          s = s.replace(field_old, field_new, 1)
+
+          helper_start = s.find("    private fun r5SetRecordPulse(recordingNow: Boolean) {")
+          helper_end = s.find("    private fun makeRecordButton(): Button {", helper_start)
+          if helper_start < 0 or helper_end < 0:
+              raise SystemExit("R6 STOP: R5 pulse helper missing")
+
+          old_helper = s[helper_start:helper_end]
+          new_helper = '''    private fun r6ApplyRecordSurface(recordingNow: Boolean) {
+                  if (!::recordButton.isInitialized) return
+
+                  // Programmatic Android Buttons retain their theme tint unless it is
+                  // explicitly replaced. R5's red drawable was therefore rendered dark.
+                  recordButton.backgroundTintList = null
+                  recordButton.background = GradientDrawable().apply {
+                      shape = GradientDrawable.RECTANGLE
+                      cornerRadius = dp(14).toFloat()
+                      setColor(
+                          if (recordingNow) {
+                              DevelopUgandaFivemods8Theme.record
+                          } else {
+                              DevelopUgandaFivemods8Theme.transparent
+                          }
+                      )
+                      setStroke(
+                          dp(if (recordingNow) 3 else 2),
+                          DevelopUgandaFivemods8Theme.record
+                      )
+                  }
+                  recordButton.backgroundTintList =
+                      if (recordingNow) {
+                          android.content.res.ColorStateList.valueOf(
+                              DevelopUgandaFivemods8Theme.record
+                          )
+                      } else {
+                          null
+                      }
+                  recordButton.stateListAnimator = null
+                  recordButton.elevation = 0f
+                  recordButton.setTextColor(DevelopUgandaFivemods8Theme.content)
+                  recordButton.invalidate()
+              }
+
+              private fun r5SetRecordPulse(recordingNow: Boolean) {
+                  if (!::recordButton.isInitialized) return
+                  r6RecordingVisualActive = recordingNow
+
+                  r5RecordPulseAnimator?.cancel()
+                  r5RecordPulseAnimator = null
+                  recordButton.animate().cancel()
+                  uiHandler.removeCallbacks(v257HomeMotionRunnable)
+
+                  recordButton.alpha = 1f
+                  recordButton.scaleX = 1f
+                  recordButton.scaleY = 1f
+                  r6ApplyRecordSurface(recordingNow)
+
+                  if (::reportRecordState.isInitialized) {
+                      reportRecordState.animate().cancel()
+                      reportRecordState.alpha = 1f
+                      reportRecordState.scaleX = 1f
+                      reportRecordState.scaleY = 1f
+                      reportRecordState.setRecordingState(recordingNow)
+                  }
+
+                  if (recordingNow) {
+                      val buttonPulse = android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                          recordButton,
+                          android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.72f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.045f),
+                          android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.045f)
+                      ).apply {
+                          duration = 720L
+                          repeatCount = android.animation.ValueAnimator.INFINITE
+                          repeatMode = android.animation.ValueAnimator.REVERSE
+                      }
+                      val haloPulse =
+                          if (::reportRecordState.isInitialized) {
+                              android.animation.ObjectAnimator.ofPropertyValuesHolder(
+                                  reportRecordState,
+                                  android.animation.PropertyValuesHolder.ofFloat("alpha", 1f, 0.38f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.08f),
+                                  android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.08f)
+                              ).apply {
+                                  duration = 720L
+                                  repeatCount = android.animation.ValueAnimator.INFINITE
+                                  repeatMode = android.animation.ValueAnimator.REVERSE
+                              }
+                          } else {
+                              null
+                          }
+                      r5RecordPulseAnimator = android.animation.AnimatorSet().apply {
+                          if (haloPulse == null) playTogether(buttonPulse) else playTogether(buttonPulse, haloPulse)
+                          start()
+                      }
+                  } else {
+                      v257UpdateHomeMotionLoop()
+                  }
+              }
+
+          '''
+          s = s[:helper_start] + new_helper + s[helper_end:]
+
+          # Clear the inherited theme tint at construction, before any recording.
+          button_anchor = "            setPadding(0, 0, 0, 0)\n            background = GradientDrawable().apply {"
+          button_replacement = "            setPadding(0, 0, 0, 0)\n            backgroundTintList = null\n            background = GradientDrawable().apply {"
+          if s.count(button_anchor) != 1:
+              raise SystemExit("R6 STOP: record button construction anchor missing")
+          s = s.replace(button_anchor, button_replacement, 1)
+
+          # HUD refresh runs every second. Reassert only the surface here; do not
+          # restart the AnimatorSet, so the pulse remains continuous.
+          refresh_anchor = '''        if (::guidesView.isInitialized) guidesView.visibility = View.GONE
+              }
+
+              internal fun v253QualityLabel(): String = qualityDeckLabel()'''
+          refresh_replacement = '''        if (::guidesView.isInitialized) guidesView.visibility = View.GONE
+                  r6ApplyRecordSurface(r6RecordingVisualActive)
+              }
+
+              internal fun v253QualityLabel(): String = qualityDeckLabel()'''
+          if s.count(refresh_anchor) != 1:
+              raise SystemExit("R6 STOP: refreshHud tail anchor missing")
+          s = s.replace(refresh_anchor, refresh_replacement, 1)
+
+          a.write_text(s)
+          PY
+
+      - name: R6 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          python3 - "$A" "$N" <<'PY'
+          from pathlib import Path
+          import sys
+
+          s = Path(sys.argv[1]).read_text()
+          nav = Path(sys.argv[2]).read_text()
+          assert "private var r6RecordingVisualActive = false" in s
+          assert "private fun r6ApplyRecordSurface(recordingNow: Boolean)" in s
+          assert "recordButton.backgroundTintList = null" in s
+          assert "android.content.res.ColorStateList.valueOf(" in s
+          assert "r6RecordingVisualActive = recordingNow" in s
+          assert "r6ApplyRecordSurface(r6RecordingVisualActive)" in s
+          assert "recordButton.stateListAnimator = null" in s
+          assert "recordButton.elevation = 0f" in s
+          assert s.count("r5SetRecordPulse(true)") == 1
+          start = s.index("is VideoRecordEvent.Start")
+          final = s.index("is VideoRecordEvent.Finalize")
+          assert start < s.index("r5SetRecordPulse(true)", start) < final
+          assert "translationY = dp(10).toFloat()" in nav
+          assert "CAMERA_HANDOFF_SETTLE_MS = 850L" in nav
+          print("R6 VERIFIED • THEME TINT DEFEATED • RED SURFACE PERSISTENT")
+          PY
+
+      - name: Section 2 lock the exact R6 visual baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          F="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt"
+          python3 - "$A" "$N" "$C" "$F" /tmp/r6-section2-02-protected.json <<'PY'
+          from pathlib import Path
+          import hashlib,json,sys
+
+          activity=Path(sys.argv[1]).read_text()
+          navigator=Path(sys.argv[2]).read_bytes()
+          chrome=Path(sys.argv[3]).read_bytes()
+          field_ui=Path(sys.argv[4]).read_bytes()
+
+          def between(text,start_marker,end_marker):
+              start=text.index(start_marker)
+              end=text.index(end_marker,start)
+              return text[start:end].encode()
+
+          protected={
+              "navigator": navigator,
+              "broadcast_chrome": chrome,
+              "f12_field_ui": field_ui,
+              "visible_action_row": between(
+                  activity,
+                  'tag = "v237_camera_action_row"',
+                  "bottomDeck.addView(actionRow)",
+              ),
+              "persistent_red_surface": between(
+                  activity,
+                  "private fun r6ApplyRecordSurface(recordingNow: Boolean)",
+                  "private fun makeRecordButton(): Button",
+              ),
+              "record_button_geometry": between(
+                  activity,
+                  "private fun makeRecordButton(): Button",
+                  "private fun space(width: Int): View",
+              ),
+          }
+          fingerprints={
+              name:hashlib.sha256(content).hexdigest()
+              for name,content in protected.items()
+          }
+          Path(sys.argv[5]).write_text(json.dumps(fingerprints,sort_keys=True,indent=2)+"\n")
+          print("R6 SECTION 2 VISUAL LOCK CAPTURED")
+          PY
+
+      - name: Section 2 V275 fail-open and low-grade camera compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          V="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV275ControlSurface.kt"
+          L="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaLensIntelligence.kt"
+          T="app/src/androidTest/java/com/sentongoharuna/pulse/DevelopUgandaFiveModeInstrumentation.kt"
+          M="app/src/main/AndroidManifest.xml"
+          G="app/build.gradle.kts"
+          H="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection201Compatibility.kt"
+          test -s "$A"
+          test -s "$V"
+          test -s "$L"
+          test -s "$T"
+          test -s "$M"
+          test -s "$G"
+
+          python3 - "$A" "$V" "$L" "$T" "$M" "$G" "$H" <<'PY'
+          from pathlib import Path
+          import re,sys
+
+          activity_path,v275_path,lens_path,test_path,manifest_path,gradle_path,helper_path = map(Path,sys.argv[1:])
+          activity=activity_path.read_text()
+          v275=v275_path.read_text()
+          lens=lens_path.read_text()
+          tests=test_path.read_text()
+          manifest=manifest_path.read_text()
+          gradle=gradle_path.read_text()
+
+          helper='''package com.sentongoharuna.pulse
+
+          import android.app.Activity
+          import android.content.Context
+          import android.content.Intent
+          import android.content.SharedPreferences
+          import android.os.Bundle
+          import android.util.Log
+          import java.util.Locale
+
+          /**
+           * Section 2.02 is deliberately runtime-only. It does not own or alter
+           * the R6 camera chrome, bottom navigator, or recording-state visuals.
+           */
+          object DevelopUgandaSection201Compatibility {
+              private const val TAG = "DU_S2_02"
+
+              fun repairV275Preferences(context: Context) {
+                  repairBooleans(context, "develop_uganda_v275_control_surface", linkedMapOf(
+                      "context_highlights" to true,
+                      "active_control_highlights" to true,
+                      "recent_activity" to true,
+                      "large_touch_targets" to false,
+                      "high_contrast" to false,
+                  ))
+                  repairString(context, "develop_uganda_v275_control_surface", "quick_profile", "CUSTOM")
+
+                  repairBooleans(context, "develop_uganda_v271_live_coach_output_master", linkedMapOf(
+                      "live_coach" to true,
+                      "tap_fix" to true,
+                  ))
+                  repairString(context, "develop_uganda_v271_live_coach_output_master", "output_mode", "CLEAN")
+                  repairString(context, "develop_uganda_v271_live_coach_output_master", "interface_level", "BEGINNER")
+
+                  repairBooleans(context, "develop_uganda_v272_field_sound_continuity", linkedMapOf(
+                      "audio_coach" to true,
+                      "audio_lock" to true,
+                      "continuity_engine" to true,
+                      "ghost_overlay" to false,
+                  ))
+                  repairBooleans(context, "develop_uganda_v273_motion_shot_control", linkedMapOf(
+                      "movement_coach" to true,
+                      "horizon_assist" to true,
+                      "auto_hide_motion_ui" to true,
+                  ))
+                  repairString(context, "develop_uganda_v273_motion_shot_control", "shot_mode", "HANDHELD")
+
+                  repairBooleans(context, "develop_uganda_v274_media_vault", linkedMapOf(
+                      "auto_register" to true,
+                      "protect_masters" to true,
+                      "health_check" to true,
+                  ))
+                  repairBooleans(context, "develop_uganda_v276_recording_safety", linkedMapOf(
+                      "health_monitor" to true,
+                      "finalize_verify" to true,
+                      "lock_controls_while_rec" to true,
+                      "session_journal" to true,
+                      "event_log" to true,
+                      "needs_recovery_review" to false,
+                      "capture_active" to false,
+                  ))
+                  repairBooleans(context, "develop_uganda_v277_lighting_exposure", linkedMapOf(
+                      "lighting_coach" to true,
+                      "face_meter" to true,
+                      "highlight_protection" to true,
+                      "shadow_protection" to true,
+                      "flicker_assist" to true,
+                      "spot_meter" to true,
+                      "spot_has_point" to false,
+                      "snap_flicker" to false,
+                      "snap_backlight" to false,
+                  ))
+                  repairBooleans(context, "develop_uganda_v258_live_workflow_home", linkedMapOf(
+                      "live_card_data" to true,
+                      "flow_path_motion" to true,
+                  ))
+              }
+
+              private fun repairBooleans(
+                  context: Context,
+                  preferenceName: String,
+                  defaults: Map<String, Boolean>,
+              ) {
+                  val preferences = context.duSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+                  val values = runCatching { preferences.all }.getOrDefault(emptyMap())
+                  val editor = preferences.edit()
+                  var changed = false
+                  defaults.forEach { (key, defaultValue) ->
+                      val raw = values[key]
+                      if (raw != null && raw !is Boolean) {
+                          editor.putBoolean(key, booleanValue(raw, defaultValue))
+                          changed = true
+                      }
+                  }
+                  if (changed) editor.apply()
+              }
+
+              private fun repairString(
+                  context: Context,
+                  preferenceName: String,
+                  key: String,
+                  defaultValue: String,
+              ) {
+                  val preferences = context.duSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+                  val raw = runCatching { preferences.all[key] }.getOrNull()
+                  if (raw != null && raw !is String) {
+                      preferences.edit().putString(key, defaultValue).apply()
+                  }
+              }
+
+              private fun booleanValue(raw: Any, defaultValue: Boolean): Boolean = when (raw) {
+                  is Boolean -> raw
+                  is Number -> raw.toInt() != 0
+                  is String -> when (raw.trim().uppercase(Locale.US)) {
+                      "TRUE", "ON", "YES", "Y", "1", "ENABLED" -> true
+                      "FALSE", "OFF", "NO", "N", "0", "DISABLED" -> false
+                      else -> defaultValue
+                  }
+                  else -> defaultValue
+              }
+
+              fun openCameraAndFinish(
+                  activity: Activity,
+                  sourceIntent: Intent?,
+                  failure: Throwable,
+              ) {
+                  Log.e(TAG, "V275 settings failed; opening the core camera", failure)
+                  val target = Intent(activity, DevelopUgandaAllProCameraActivity::class.java).apply {
+                      addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                      runCatching {
+                          sourceIntent?.extras?.let { putExtras(Bundle(it)) }
+                      }
+                      putExtra("section2_v275_fail_open", true)
+                  }
+                  val opened = runCatching {
+                      activity.startActivity(target)
+                      true
+                  }.getOrDefault(false)
+                  if (!opened) {
+                      runCatching {
+                          activity.packageManager.getLaunchIntentForPackage(activity.packageName)?.let {
+                              it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                              activity.startActivity(it)
+                          }
+                      }
+                  }
+                  activity.finish()
+              }
+          }
+          '''
+          helper_path.write_text(helper)
+
+          # Repair legacy String/number preferences before V275 reads them, and
+          # make the settings screen fail open to the proven core camera.
+          class_start=v275.find("class DevelopUgandaV275CameraSettingsActivity")
+          next_class=v275.find("\nclass DevelopUgandaV275WorkflowSettingsActivity",class_start)
+          header="    override fun onCreate(savedInstanceState: Bundle?) {"
+          method_start=v275.find(header,class_start,next_class)
+          if min(class_start,next_class,method_start) < 0:
+              raise SystemExit("SECTION2 STOP: V275 camera settings class/onCreate missing")
+          if "DevelopUgandaSection201Compatibility.repairV275Preferences(this)" in v275[class_start:next_class]:
+              raise SystemExit("SECTION2 STOP: V275 repair already present; refusing a double patch")
+          body_start=method_start+len(header)
+          method_close=v275.rfind("\n    }",body_start,next_class)
+          if method_close < 0:
+              raise SystemExit("SECTION2 STOP: V275 onCreate close missing")
+          original=v275[body_start:method_close]
+          super_anchor="\n        super.onCreate(savedInstanceState)"
+          if original.count(super_anchor) != 1:
+              raise SystemExit("SECTION2 STOP: V275 super.onCreate anchor missing")
+          original=original.replace(
+              super_anchor,
+              super_anchor+"\n        DevelopUgandaSection201Compatibility.repairV275Preferences(this)",
+              1,
+          )
+          shifted="\n".join(("    "+line if line.strip() else line) for line in original.split("\n"))
+          wrapped=(
+              header+
+              "\n        try {"+
+              shifted+
+              "\n        } catch (failure: Throwable) {"+
+              "\n            DevelopUgandaSection201Compatibility.openCameraAndFinish(this, intent, failure)"+
+              "\n        }"+
+              "\n    }"
+          )
+          v275=v275[:method_start]+wrapped+v275[method_close+len("\n    }"):]
+
+          # Prefer the requested lens, then the opposite lens, then any camera
+          # exposed by CameraX. No low-grade single-camera phone is rejected
+          # merely because it lacks a conventional back/front pairing.
+          selector_start=lens.find("    fun selectorFor(")
+          selector_end=lens.find("    fun hasCamera(",selector_start)
+          if selector_start < 0 or selector_end < 0:
+              raise SystemExit("SECTION2 STOP: lens selector anchor missing")
+          selector='''    fun selectorFor(
+                  provider: ProcessCameraProvider,
+                  cameraId: String?,
+                  useFront: Boolean
+              ): CameraSelector {
+                  if (!cameraId.isNullOrBlank()) {
+                      provider.availableCameraInfos
+                          .firstOrNull { cameraIdOf(it) == cameraId }
+                          ?.let { return it.cameraSelector }
+                  }
+
+                  val preferred =
+                      if (useFront) CameraSelector.DEFAULT_FRONT_CAMERA
+                      else CameraSelector.DEFAULT_BACK_CAMERA
+                  val alternate =
+                      if (useFront) CameraSelector.DEFAULT_BACK_CAMERA
+                      else CameraSelector.DEFAULT_FRONT_CAMERA
+
+                  if (runCatching { provider.hasCamera(preferred) }.getOrDefault(false)) {
+                      return preferred
+                  }
+                  if (runCatching { provider.hasCamera(alternate) }.getOrDefault(false)) {
+                      return alternate
+                  }
+                  return provider.availableCameraInfos.firstOrNull()?.cameraSelector ?: preferred
+              }
+
+          '''
+          lens=lens[:selector_start]+selector+lens[selector_end:]
+
+          # Extend R6's existing requested/available quality negotiation down
+          # to CameraX SD and make the emergency retry request SD first.
+          replacements=[
+              (
+                  "listOf(Quality.HD, Quality.FHD, Quality.UHD)",
+                  "listOf(Quality.HD, Quality.FHD, Quality.SD, Quality.UHD)",
+                  1,
+              ),
+              (
+                  "listOf(Quality.FHD, Quality.HD, Quality.UHD)",
+                  "listOf(Quality.FHD, Quality.HD, Quality.SD, Quality.UHD)",
+                  1,
+              ),
+              (
+                  "QualitySelector.from(quality)",
+                  "QualitySelector.fromOrderedList(\n                                listOf(quality, Quality.SD).distinct(),\n                                FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)\n                            )",
+                  1,
+              ),
+              (
+                  'coreDeliveredProfileLabel = "SAFE FALLBACK • 720"',
+                  'coreDeliveredProfileLabel = "SAFE FALLBACK • 480"',
+                  1,
+              ),
+              (
+                  "fallback to SDR HD.",
+                  "fallback to SDR SD.",
+                  1,
+              ),
+              (
+                  "known-compatible SDR/HD profile below.",
+                  "known-compatible SDR/SD profile below.",
+                  1,
+              ),
+          ]
+          for before,after,expected in replacements:
+              if activity.count(before) != expected:
+                  raise SystemExit("SECTION2 STOP: camera capability anchor count changed: "+before)
+              activity=activity.replace(before,after,expected)
+
+          safe_bitrate="coreDeliveredBitrateBps = coreBitrateFor(Quality.HD)"
+          if activity.count(safe_bitrate) != 1:
+              raise SystemExit("SECTION2 STOP: safe bitrate anchor missing")
+          activity=activity.replace(
+              safe_bitrate,
+              "coreDeliveredBitrateBps = coreBitrateFor(Quality.SD)",
+              1,
+          )
+          safe_quality_pattern=re.compile(
+              r'(buildCoreVideoCapture\(\s*\n\s*)Quality\.HD(\s*,\s*\n\s*DynamicRange\.SDR\s*,)'
+          )
+          activity,safe_quality_count=safe_quality_pattern.subn(
+              r'\1Quality.SD\2',
+              activity,
+              count=1,
+          )
+          if safe_quality_count != 1:
+              raise SystemExit("SECTION2 STOP: safe video fallback anchor missing")
+          label_anchor='''quality == Quality.FHD -> "1080"
+                  quality == Quality.HD -> "720"'''
+          if activity.count(label_anchor) != 1:
+              raise SystemExit("SECTION2 STOP: quality label anchor missing")
+          activity=activity.replace(
+              label_anchor,
+              '''quality == Quality.FHD -> "1080"
+                  quality == Quality.HD -> "720"
+                  quality == Quality.SD -> "480"''',
+              1,
+          )
+          bitrate_anchor='''quality == Quality.FHD -> requested.coerceIn(16_000_000, 24_000_000)
+                      quality == Quality.HD -> requested.coerceIn(5_000_000, 14_000_000)'''
+          if activity.count(bitrate_anchor) != 1:
+              raise SystemExit("SECTION2 STOP: bitrate anchor missing")
+          activity=activity.replace(
+              bitrate_anchor,
+              '''quality == Quality.FHD -> requested.coerceIn(16_000_000, 24_000_000)
+                      quality == Quality.HD -> requested.coerceIn(5_000_000, 14_000_000)
+                      quality == Quality.SD -> requested.coerceIn(2_000_000, 8_000_000)''',
+              1,
+          )
+
+          # Android creates this custom Instrumentation but it never entered
+          # onStart. Calling start() from onCreate prevents the connected task
+          # from remaining yellow forever.
+          runner_anchor="    override fun onStart() {"
+          if tests.count(runner_anchor) != 1:
+              raise SystemExit("SECTION2 STOP: instrumentation onStart anchor missing")
+          if "override fun onCreate(arguments: Bundle?)" in tests:
+              raise SystemExit("SECTION2 STOP: instrumentation onCreate already exists")
+          runner='''    override fun onCreate(arguments: Bundle?) {
+                  super.onCreate(arguments)
+                  start()
+              }
+
+          '''
+          tests=tests.replace(runner_anchor,runner+runner_anchor,1)
+
+          # Do not let Play filtering reject phones because they lack a back
+          # camera, front camera, flash, autofocus, or microphone feature.
+          def make_optional(text,name):
+              pattern=re.compile(r'<uses-feature\b[^>]*android:name="'+re.escape(name)+r'"[^>]*/>')
+              match=pattern.search(text)
+              if match:
+                  element=match.group(0)
+                  if re.search(r'android:required="[^"]*"',element):
+                      element=re.sub(r'android:required="[^"]*"','android:required="false"',element)
+                  else:
+                      element=element[:-2].rstrip()+' android:required="false"/>'
+                  return text[:match.start()]+element+text[match.end():]
+              marker="    <queries>"
+              if marker not in text:
+                  marker="    <application"
+              declaration=f'    <uses-feature android:name="{name}" android:required="false"/>\n'
+              return text.replace(marker,declaration+"\n"+marker,1)
+
+          for feature in (
+              "android.hardware.camera.any",
+              "android.hardware.camera",
+              "android.hardware.camera.front",
+              "android.hardware.camera.autofocus",
+              "android.hardware.camera.flash",
+              "android.hardware.microphone",
+          ):
+              manifest=make_optional(manifest,feature)
+
+          gradle=re.sub(
+              r'(?m)^(\s*)versionCode\s*=\s*\d+\s*$',
+              r'\1versionCode = 28602',
+              gradle,
+              count=1,
+          )
+          gradle=re.sub(
+              r'(?m)^(\s*)versionName\s*=\s*"[^"]*"\s*$',
+              r'\1versionName = "286.02-r6-section2-02-v275-safe-preferences-no-hang"',
+              gradle,
+              count=1,
+          )
+
+          activity_path.write_text(activity)
+          v275_path.write_text(v275)
+          lens_path.write_text(lens)
+          test_path.write_text(tests)
+          manifest_path.write_text(manifest)
+          gradle_path.write_text(gradle)
+          PY
+
+      - name: Section 2 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          V="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV275ControlSurface.kt"
+          L="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaLensIntelligence.kt"
+          T="app/src/androidTest/java/com/sentongoharuna/pulse/DevelopUgandaFiveModeInstrumentation.kt"
+          M="app/src/main/AndroidManifest.xml"
+          G="app/build.gradle.kts"
+          H="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection201Compatibility.kt"
+          W=".github/workflows/00-R6-SECTION2-03-TIKTOK-R60-ENGINE-ONLY.yml"
+          test -s "$H"
+          grep -q 'context.duSharedPreferences(preferenceName, Context.MODE_PRIVATE)' "$H"
+          ! grep -q 'context.getSharedPreferences' "$H"
+          grep -q 'repairV275Preferences(this)' "$V"
+          grep -q 'openCameraAndFinish(this, intent, failure)' "$V"
+          grep -q 'class DevelopUgandaV275CameraSettingsActivity' "$V"
+          grep -q 'provider.hasCamera(preferred)' "$L"
+          grep -q 'provider.hasCamera(alternate)' "$L"
+          grep -q 'availableCameraInfos.firstOrNull()?.cameraSelector' "$L"
+          grep -q 'Quality.SD' "$A"
+          grep -q 'SAFE FALLBACK • 480' "$A"
+          grep -q 'versionCode = 28602' "$G"
+          grep -q '286.02-r6-section2-02-v275-safe-preferences-no-hang' "$G"
+          ! grep -E 'android.hardware.camera[^\"]*"[^>]*android:required="true"' "$M"
+          CONNECTED_TASK="connectedDebugAndroid""Test"
+          ! grep -q "$CONNECTED_TASK" "$W"
+          python3 - "$T" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text()
+          create=s.index("override fun onCreate(arguments: Bundle?)")
+          start_call=s.index("start()",create)
+          on_start=s.index("override fun onStart()",create)
+          assert create < start_call < on_start
+          assert s.count("override fun onCreate(arguments: Bundle?)") == 1
+          print("CUSTOM INSTRUMENTATION START CONTRACT VERIFIED")
+          PY
+          echo "SECTION 2.02 VERIFIED • GUARDED PREFERENCES • V275 FAIL-OPEN • ANY CAMERA • SD FALLBACK • TEST RUNNER STARTS"
+
+      - name: Prove R6 visuals are unchanged by Section 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          F="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt"
+          python3 - "$A" "$N" "$C" "$F" /tmp/r6-section2-02-protected.json <<'PY'
+          from pathlib import Path
+          import hashlib,json,sys
+
+          activity=Path(sys.argv[1]).read_text()
+          def between(text,start_marker,end_marker):
+              start=text.index(start_marker)
+              end=text.index(end_marker,start)
+              return text[start:end].encode()
+          protected={
+              "navigator": Path(sys.argv[2]).read_bytes(),
+              "broadcast_chrome": Path(sys.argv[3]).read_bytes(),
+              "f12_field_ui": Path(sys.argv[4]).read_bytes(),
+              "visible_action_row": between(activity,'tag = "v237_camera_action_row"',"bottomDeck.addView(actionRow)"),
+              "persistent_red_surface": between(activity,"private fun r6ApplyRecordSurface(recordingNow: Boolean)","private fun makeRecordButton(): Button"),
+              "record_button_geometry": between(activity,"private fun makeRecordButton(): Button","private fun space(width: Int): View"),
+          }
+          actual={name:hashlib.sha256(content).hexdigest() for name,content in protected.items()}
+          expected=json.loads(Path(sys.argv[5]).read_text())
+          if actual != expected:
+              changed=sorted(set(actual)|set(expected))
+              changed=[name for name in changed if actual.get(name)!=expected.get(name)]
+              raise SystemExit("R6 PROTECTION FAILURE: "+", ".join(changed))
+          print("R6 VISUAL BASELINE UNCHANGED • BOTTOM ICONS + PERSISTENT RED REC PROTECTED")
+          PY
+
+      - name: Section 2.03 lock S2.02 and every non-TikTok surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          python3 - "$A" /tmp/r6-s203-protected.json <<'PY'
+          from pathlib import Path
+          import hashlib,json,sys
+
+          activity=Path(sys.argv[1]).read_text()
+          output=Path(sys.argv[2])
+          root=Path("app/src/main/java/com/sentongoharuna/pulse")
+
+          def between(text,start_marker,end_marker):
+              start=text.index(start_marker)
+              end=text.index(end_marker,start)
+              return text[start:end].encode()
+
+          protected={
+              "additive_routes": (root/"DevelopUgandaAdditiveCameraModes.kt").read_bytes(),
+              "mode_profiles": (root/"DevelopUgandaModeProfiles.kt").read_bytes(),
+              "live_camera": (root/"DevelopUgandaLiveActivity.kt").read_bytes(),
+              "main_activity": (root/"MainActivity.kt").read_bytes(),
+              "navigator": (root/"DevelopUgandaCameraModeNavigator.kt").read_bytes(),
+              "broadcast_chrome": (root/"DevelopUgandaBroadcastCameraChrome.kt").read_bytes(),
+              "f12_field_ui": (root/"DevelopUgandaFivemods12FieldUi.kt").read_bytes(),
+              "v275_control": (root/"DevelopUgandaV275ControlSurface.kt").read_bytes(),
+              "lens_intelligence": (root/"DevelopUgandaLensIntelligence.kt").read_bytes(),
+              "manifest": Path("app/src/main/AndroidManifest.xml").read_bytes(),
+              "additive_delivery": between(
+                  activity,
+                  "    private fun exportAdditiveDelivery(",
+                  "    private fun verifyAutomaticSocialMaster(",
+              ),
+              "visible_action_row": between(
+                  activity,
+                  'tag = "v237_camera_action_row"',
+                  "bottomDeck.addView(actionRow)",
+              ),
+              "persistent_red_surface": between(
+                  activity,
+                  "private fun r6ApplyRecordSurface(recordingNow: Boolean)",
+                  "private fun makeRecordButton(): Button",
+              ),
+              "record_button_geometry": between(
+                  activity,
+                  "private fun makeRecordButton(): Button",
+                  "private fun space(width: Int): View",
+              ),
+          }
+          fingerprints={
+              name:hashlib.sha256(content).hexdigest()
+              for name,content in protected.items()
+          }
+          output.write_text(json.dumps(fingerprints,sort_keys=True,indent=2)+"\n")
+          print("S2.02 FORWARD BASE LOCKED • NON-TIKTOK + R6 VISUALS + DELIVERY")
+          PY
+
+      - name: Section 2.03 apply exact R60 only to TikTok camera hub
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAYLOAD='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'
+          mkdir -p /tmp/r6-s203
+          echo "$PAYLOAD" | base64 -d > /tmp/r6-s203/payload.tar.gz
+          tar -xzf /tmp/r6-s203/payload.tar.gz -C /tmp/r6-s203
+          install -m 0644 \
+            /tmp/r6-s203/DevelopUgandaR60TikTokEngine.kt \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt
+          python3 /tmp/r6-s203/apply_s203.py \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt \
+            app/build.gradle.kts
+
+      - name: Section 2.03 hard acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          R="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt"
+          G="app/build.gradle.kts"
+          test -s "$R"
+          grep -q 'versionCode = 28603' "$G"
+          grep -q '286.03-r6-section2-03-tiktok-r60-engine-only' "$G"
+          grep -q 'val camerax = "1.7.0-alpha03"' "$G"
+          grep -q 'androidx.camera.media3:media3-effect:1.0.0-alpha04' "$G"
+          grep -q 'private fun isTikTokCamera()' "$A"
+          grep -q 'DevelopUgandaCameraPage.TIKTOK' "$A"
+          grep -q 'if (r60TikTokProfile != null)' "$A"
+          grep -q 'UseCaseGroup.Builder()' "$A"
+          grep -q 'r60TikTokEffect?.close()' "$A"
+          grep -q 'private fun <T : Any> applyIsp(' "$R"
+          python3 - "$A" "$R" /tmp/r6-s203-protected.json <<'PY'
+          from pathlib import Path
+          import hashlib,json,sys
+
+          activity=Path(sys.argv[1]).read_text()
+          engine=Path(sys.argv[2]).read_text()
+          expected=json.loads(Path(sys.argv[3]).read_text())
+          root=Path("app/src/main/java/com/sentongoharuna/pulse")
+
+          def between(text,start_marker,end_marker):
+              start=text.index(start_marker)
+              end=text.index(end_marker,start)
+              return text[start:end].encode()
+
+          protected={
+              "additive_routes": (root/"DevelopUgandaAdditiveCameraModes.kt").read_bytes(),
+              "mode_profiles": (root/"DevelopUgandaModeProfiles.kt").read_bytes(),
+              "live_camera": (root/"DevelopUgandaLiveActivity.kt").read_bytes(),
+              "main_activity": (root/"MainActivity.kt").read_bytes(),
+              "navigator": (root/"DevelopUgandaCameraModeNavigator.kt").read_bytes(),
+              "broadcast_chrome": (root/"DevelopUgandaBroadcastCameraChrome.kt").read_bytes(),
+              "f12_field_ui": (root/"DevelopUgandaFivemods12FieldUi.kt").read_bytes(),
+              "v275_control": (root/"DevelopUgandaV275ControlSurface.kt").read_bytes(),
+              "lens_intelligence": (root/"DevelopUgandaLensIntelligence.kt").read_bytes(),
+              "manifest": Path("app/src/main/AndroidManifest.xml").read_bytes(),
+              "additive_delivery": between(
+                  activity,
+                  "    private fun exportAdditiveDelivery(",
+                  "    private fun verifyAutomaticSocialMaster(",
+              ),
+              "visible_action_row": between(
+                  activity,
+                  'tag = "v237_camera_action_row"',
+                  "bottomDeck.addView(actionRow)",
+              ),
+              "persistent_red_surface": between(
+                  activity,
+                  "private fun r6ApplyRecordSurface(recordingNow: Boolean)",
+                  "private fun makeRecordButton(): Button",
+              ),
+              "record_button_geometry": between(
+                  activity,
+                  "private fun makeRecordButton(): Button",
+                  "private fun space(width: Int): View",
+              ),
+          }
+          actual={name:hashlib.sha256(data).hexdigest() for name,data in protected.items()}
+          if actual != expected:
+              changed=sorted(name for name in set(actual)|set(expected) if actual.get(name)!=expected.get(name))
+              raise SystemExit("S2.03 ISOLATION FAILURE: "+", ".join(changed))
+
+          exact=(
+              "const val TARGET_BITRATE_BPS = 15_000_000",
+              "const val CONTRAST = 0.050f",
+              "const val SATURATION = 3.0f",
+              "const val LIGHTNESS = 0.75f",
+              "const val RED_SCALE = 1.009f",
+              "const val GREEN_SCALE = 1.003f",
+              "const val BLUE_SCALE = 0.998f",
+              "QualitySelector.from(Quality.FHD)",
+              "Range(profile.fps, profile.fps)",
+              "Recorder.VIDEO_CAPABILITIES_SOURCE_CODEC_CAPABILITIES",
+              "MediaFormat.MIMETYPE_VIDEO_HEVC",
+              "CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE",
+              "NOISE_REDUCTION_MODE_OFF",
+              "NOISE_REDUCTION_MODE_MINIMAL",
+              "EDGE_MODE_HIGH_QUALITY",
+              "TONEMAP_MODE_HIGH_QUALITY",
+              "COLOR_CORRECTION_MODE_HIGH_QUALITY",
+              "COLOR_CORRECTION_ABERRATION_MODE_HIGH_QUALITY",
+              "CONTROL_AE_ANTIBANDING_MODE_AUTO",
+              "R60 EFFECT -> CLEAN SAFE",
+              "R60 NR-OFF -> NR-MIN",
+              "R60 COLOR-HQ -> FAST",
+              "R60 TONE-HQ -> FAST",
+              "R60 EDGE-HQ -> FAST",
+              "R60 NR-MIN -> FAST",
+              "1080P60 HEVC STAB",
+              "1080P60 HEVC NO-STAB",
+              "1080P60 H264 STAB",
+              "1080P60 H264 NO-STAB",
+              "1080P30 H264 STAB",
+              "1080P30 H264 NO-STAB",
+              "R60 UNIVERSAL SAFE",
+          )
+          missing=[value for value in exact if value not in engine]
+          if missing:
+              raise SystemExit("R60 CONTRACT MISSING: "+", ".join(missing))
+          forbidden=(
+              "CONTROL_AE_TARGET_FPS_RANGE",
+              "SENSOR_EXPOSURE_TIME",
+              "TONEMAP_CURVE",
+              "Sharpen",
+              "getSharedPreferences",
+          )
+          present=[value for value in forbidden if value in engine]
+          if present:
+              raise SystemExit("R60 FORBIDDEN CONTRACT: "+", ".join(present))
+
+          bind=between(activity,"    private fun bindCamera()","    private fun drawStrongRecordedText(").decode()
+          assert "val r60TikTokVideo" in bind
+          assert 'isTikTokCamera() && captureModes[captureModeIndex] != "PHOTO"' in bind
+          assert "if (r60TikTokProfile != null)" in bind
+          assert "} else {\n                    v244ApplyCamera2Controls()" in bind
+          assert "DevelopUgandaR60TikTokEngine.applyRuntimeControls(" in bind
+          assert activity.count("private fun isTikTokCamera(): Boolean") == 1
+          assert activity.count("DevelopUgandaR60TikTokEngine.State()") == 1
+          assert "CLEAN MASTER + TIKTOK UPLOAD COPY" in (root/"DevelopUgandaModeProfiles.kt").read_text()
+          print("S2.03 VERIFIED • EXACT R60 • TIKTOK ROUTE ONLY • R6 + NON-TIKTOK UNCHANGED")
+          PY
+
+      - name: Prove R6 visuals still unchanged after TikTok R60
+        shell: bash
+        run: |
+          set -euo pipefail
+          A="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          N="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt"
+          F="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt"
+          python3 - "$A" "$N" "$C" "$F" /tmp/r6-section2-02-protected.json <<'PY'
+          from pathlib import Path
+          import hashlib,json,sys
+
+          activity=Path(sys.argv[1]).read_text()
+          def between(text,start_marker,end_marker):
+              start=text.index(start_marker)
+              end=text.index(end_marker,start)
+              return text[start:end].encode()
+          protected={
+              "navigator": Path(sys.argv[2]).read_bytes(),
+              "broadcast_chrome": Path(sys.argv[3]).read_bytes(),
+              "f12_field_ui": Path(sys.argv[4]).read_bytes(),
+              "visible_action_row": between(activity,'tag = "v237_camera_action_row"',"bottomDeck.addView(actionRow)"),
+              "persistent_red_surface": between(activity,"private fun r6ApplyRecordSurface(recordingNow: Boolean)","private fun makeRecordButton(): Button"),
+              "record_button_geometry": between(activity,"private fun makeRecordButton(): Button","private fun space(width: Int): View"),
+          }
+          actual={name:hashlib.sha256(content).hexdigest() for name,content in protected.items()}
+          expected=json.loads(Path(sys.argv[5]).read_text())
+          if actual != expected:
+              changed=sorted(name for name in set(actual)|set(expected) if actual.get(name)!=expected.get(name))
+              raise SystemExit("R6 PROTECTION FAILURE AFTER R60: "+", ".join(changed))
+          print("R6 VISUALS STILL EXACT • BOTTOM ICONS + PERSISTENT RED REC PROTECTED")
+          PY
+
+      - name: Verify protected contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/verify_source_contracts.py
+          grep -q 'tag = "f12_status_strip"' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12FieldUi.kt
+          grep -q 'recordButton.setOnTouchListener' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+
+      - name: Bounded unit tests and APK builds
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=30s 18m \
+            gradle --no-daemon --console=plain \
+              :app:testDebugUnitTest \
+              :app:assembleDebug \
+              :app:assembleDebugAndroidTest
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="R6-S2-03-TIKTOK-R60-ENGINE-ONLY-${GITHUB_RUN_NUMBER}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R6-S2-03-TIKTOK-R60-ENGINE-ONLY-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
