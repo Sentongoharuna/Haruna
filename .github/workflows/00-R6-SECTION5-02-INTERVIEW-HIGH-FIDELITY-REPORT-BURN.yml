@@ -1,0 +1,601 @@
+name: R6 SECTION5 02 - INTERVIEW HIGH FIDELITY REPORT BURN
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [".github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: r6-section5-02-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore exact accepted S5.01 forward baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=".github/workflows/00-R6-SECTION5-01-INTERVIEW-BEHAVIORAL-EVIDENCE-ENGINE.yml"
+          test -s "$BASE"
+          echo "fe79fc9c771e2f5466e7dfe04a310a5ddbd86f38861d466cd4e1b979d4738ecc  $BASE" | sha256sum -c -
+
+          python3 - "$BASE" <<'PY'
+          from pathlib import Path
+          import os
+          import subprocess
+          import sys
+
+          source = Path(sys.argv[1]).read_text().splitlines()
+          scripts = {}
+          current_name = None
+          index = 0
+          while index < len(source):
+              line = source[index]
+              if line.startswith("      - name: "):
+                  current_name = line.split(": ", 1)[1]
+              if current_name and line == "        run: |":
+                  index += 1
+                  body = []
+                  while index < len(source):
+                      candidate = source[index]
+                      if not candidate.strip():
+                          body.append("")
+                          index += 1
+                          continue
+                      if not candidate.startswith("          "):
+                          break
+                      body.append(candidate[10:])
+                      index += 1
+                  scripts[current_name] = "\n".join(body) + "\n"
+                  continue
+              index += 1
+
+          recipe = (
+              "Restore exact accepted S4.06C forward baseline",
+              "Lock immediate S4.06C inputs",
+              "Apply S5.01 real Interview evidence engine",
+              "S5.01 exact output hashes",
+              "S5.01 truth safety and real-data acceptance gate",
+              "Prove protected cameras and R6 visuals unchanged",
+          )
+          missing = [name for name in recipe if name not in scripts]
+          if missing:
+              raise SystemExit("S5.02 STOP: S5.01 recipe incomplete: " + ", ".join(missing))
+          environment = os.environ.copy()
+          environment.setdefault("GITHUB_RUN_NUMBER", "0")
+          for name in recipe:
+              print(f"::group::{name}", flush=True)
+              subprocess.run(
+                  ["bash"],
+                  input=scripts[name],
+                  text=True,
+                  check=True,
+                  cwd=Path.cwd(),
+                  env=environment,
+              )
+              print("::endgroup::", flush=True)
+          print("EXACT S5.01 FORWARD BASELINE RESTORED")
+          PY
+
+      - name: Lock immediate S5.01 inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c <<'SHA'
+          a84b48474f8a49e85b3ebe3d280a10016c0cad7180ae012ccd39e389d1453c83  app/build.gradle.kts
+          7e7ddf2a65b431bab84833359e38499a38b816c1f6e516f23666aa7ade79530c  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          cf5caa8e868066f0868f4d066c13f5eee418fcbb2c29b4f4a50a6a35d4512f01  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods9DualOutputExporter.kt
+          1b591475749cd2e48114927334ae2447fac130f50aef38a2c8c1a2bd3c10a6fe  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt
+          43ee9cb94093047f1427af8ec69566fa6ec5d697033cec5bed197f9b4a1cbdca  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewSignalGraphRenderer.kt
+          336caa4df29f95a71c5acc1bd9c4110f9ce15d440da63422e029c8c3786c886a  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt
+          f2695b97610348aeb77bf4597b64ab7ec33e39031506fabc53320be103032457  ci/verify_source_contracts.py
+          SHA
+
+      - name: Apply S5.02 high fidelity report-only Interview upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d <<'S502_PATCH' | gzip -d > /tmp/s502-interview.patch
+          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
+          S502_PATCH
+          echo "7464226271cf25da585df07e93cb2e7051a8d4a1b662d02c860f3c2a19974ad2  /tmp/s502-interview.patch" | sha256sum -c -
+          git apply --check /tmp/s502-interview.patch
+          git apply /tmp/s502-interview.patch
+          echo "S5.02 APPLIED • HIGH QUALITY • DETAILED REPORT GRAPH • NO INTERVIEW GPS RAIL"
+
+      - name: S5.02 exact output hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c <<'SHA'
+          fda58f967cae32acf7c227c4ef8fb29b3f2b494b89cbf19aa57d0a7c15e284fe  app/build.gradle.kts
+          c6a14eda833657211f87a345173ae9c713ac1d9de881ad5ea3b398119bd7b9d8  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          c7a39f5e1d8afb7db86c54d30306dcac52dc7952f94f2692a2046feea994309e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods9DualOutputExporter.kt
+          1ebc3cd0ed5270d8ce7a76323a88f9f006a7970313b097254e1260cace0031da  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt
+          288811e553a31b45397bacf9cd7a4f5356c40ddd56a3b62126b73c6337797015  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewSignalGraphRenderer.kt
+          e4132110affb50c87101061074cae2a7b9a6423504e5e281be909a097e783fc4  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt
+          f2695b97610348aeb77bf4597b64ab7ec33e39031506fabc53320be103032457  ci/verify_source_contracts.py
+          SHA
+
+      - name: S5.02 high quality and Interview privacy acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          X="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods9DualOutputExporter.kt"
+          P="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt"
+          G="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewSignalGraphRenderer.kt"
+          M="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt"
+
+          python3 - "$C" "$X" "$P" "$G" "$M" <<'PY'
+          from pathlib import Path
+          import sys
+
+          camera, exporter, policy, graph, profiles = (Path(p).read_text() for p in sys.argv[1:])
+
+          def selected(text, start, end, label):
+              if text.count(start) != 1 or text.count(end) != 1:
+                  raise AssertionError(label + " anchors changed")
+              begin = text.index(start)
+              return text[begin:text.index(end, begin)]
+
+          for token in (
+              'ENGINE_ID = "R6-S5.02-HIGH-FIDELITY-INTERVIEW-EVIDENCE"',
+              "fun qualityOrder(): List<Quality>",
+              "Quality.UHD",
+              "Quality.FHD",
+              "Quality.HD",
+              "Quality.SD",
+              "Quality.UHD -> 48_000_000",
+              "Quality.FHD -> 30_000_000",
+              "Quality.HD -> 14_000_000",
+              "TARGET_FPS = 30",
+              "exposureCorrectionEv",
+          ):
+              assert token in policy, "quality policy: " + token
+
+          take = selected(
+              camera,
+              "    private fun f9CreateTakeMetadata(",
+              "\n    private fun f9BurnDetails(",
+              "Interview take metadata",
+          )
+          for token in (
+              'operator = if (interviewOnly) "" else reporterName',
+              "locationName = if (interviewOnly) null",
+              "latitude = if (interviewOnly) null",
+              "longitude = if (interviewOnly) null",
+              "altitudeM = if (interviewOnly) null",
+              "weather = if (interviewOnly) null",
+              "shutterNs = if (interviewOnly) null",
+              "iso = if (interviewOnly) null",
+          ):
+              assert token in take, "Interview metadata sanitizer: " + token
+
+          burn = selected(
+              camera,
+              "    private fun f9BurnDetails(",
+              "\n    private fun f9CurrentBurnSample(",
+              "Interview burn allowlist",
+          )
+          interview_burn = burn[:burn.index("        val exposure")]
+          for token in (
+              "INTERVIEW BEHAVIOURAL SIGNAL REPORT",
+              "REPORT ",
+              "STORY ",
+              "SUBJECT ",
+              "GRAPH HEAD • BODY • POSTURE • GAZE • BLINK • EXPRESSION • VOICE • PAUSE",
+              "FIGURES CHANGE INDEX • DATA QUALITY • TRACKING UPTIME • FACE LIGHT",
+          ):
+              assert token in interview_burn, "Interview report token: " + token
+          for token in (
+              "REPORTER ", "PLACE ", "LAT ", "LON ", "GPS ", "DEVICE ",
+              "LENS ", "ISO ", "SHUTTER ", "BAT ", "THERM ", "WX "
+          ):
+              assert token not in interview_burn, "Interview burn leaked " + token
+
+          sample = selected(
+              camera,
+              "    private fun f9CurrentBurnSample(",
+              "\n    private fun f9CaptureBurnSample(",
+              "Interview sample sanitizer",
+          )
+          for token in (
+              'operator = if (interviewOnly) ""',
+              "accuracyM = if (interviewOnly) null",
+              "headingDeg = if (interviewOnly) null",
+              "satellitesUsed = if (interviewOnly) null",
+              'device = if (interviewOnly) ""',
+              "batteryPct = if (interviewOnly) null",
+          ):
+              assert token in sample, "Interview sample sanitizer: " + token
+
+          for token in (
+              "DevelopUgandaInterviewCameraEngine.qualityOrder()",
+              "DevelopUgandaInterviewCameraEngine.bitrateFor(selectedQuality)",
+              "!isInterviewCamera() &&",
+              "SDR • EVIDENCE NEUTRAL",
+              "STAB OFF • MEASUREMENT SAFE",
+          ):
+              assert token in camera, "Interview capture integration: " + token
+
+          transform = selected(
+              exporter,
+              "    private fun startTransform(",
+              "\n    private fun complete(",
+              "BRAND transform",
+          )
+          for token in (
+              "val interviewOnly = request.take.interviewDisclaimer",
+              "camera/location telemetry never enters its overlay path",
+              "interviewOnly = interviewOnly",
+              "interviewTakeId = request.take.takeId",
+              "if (interviewOnly) {\n                // Evidence BRAND stays neutral",
+              "DETAILED INTERVIEW REPORT BRAND",
+              "Preserve every recorded Interview timestamp and frame",
+          ):
+              assert token in transform, "Interview exporter: " + token
+          assert "setFrameRate(" not in transform, "Interview exporter resamples frames"
+
+          overlay = selected(
+              exporter,
+              "private class DevelopUgandaTimelineDetailBurnOverlay(",
+              "\n    private fun sampleIndexAt(",
+              "BRAND overlay routing",
+          )
+          branch = overlay.index("        if (interviewOnly) {")
+          return_at = overlay.index("            return", branch)
+          generic = overlay.index("        renderer.draw(", branch)
+          assert branch < return_at < generic, "general metadata renderer can reach Interview"
+          assert "interviewRenderer.draw(" in overlay
+          assert "interviewRenderer.drawUnavailable(" in overlay
+
+          for token in (
+              "INTERVIEW | MEASURED BEHAVIOURAL SIGNAL REPORT",
+              'Metric("HEAD", "HEAD MOVEMENT"',
+              'Metric("BODY", "UPPER-BODY MOTION"',
+              'Metric("POSTURE", "POSTURE SHIFT"',
+              'Metric("GAZE", "GAZE CHANGE"',
+              'Metric("BLINK", "BLINK CHANGE"',
+              'Metric("EXPRESSION", "EXPRESSION CHANGE"',
+              'Metric("VOICE", "VOICE ENERGY CHANGE"',
+              'Metric("PAUSE", "PAUSE DURATION"',
+              'Metric("CHANGE", "SIGNAL CHANGE INDEX"',
+              'Metric("QUALITY", "DATA QUALITY"',
+              "FACE LIGHT",
+              "HIGHLIGHT CLIP",
+              "SAMPLES ",
+              "QUESTIONS ",
+              "questionMarkersMs",
+              "NO TRUTH, DECEPTION OR ANXIETY VERDICT",
+          ):
+              assert token in graph, "detailed graph: " + token
+          for token in (
+              '"LAT ', '"LON ', '"GPS ', '"PLACE ', '"REPORTER ', '"DEVICE ',
+              '"LENS ', '"ISO ', '"SHUTTER ', '"BAT ', '"THERM ', '"WX '
+          ):
+              assert token not in graph, "graph contains forbidden metadata row " + token
+
+          assert 'qualityName = "INTERVIEW UHD/FHD"' in profiles
+          assert "targetBitrateBps = 48_000_000" in profiles
+          assert "4K→FHD SAFE" in profiles
+          print("S5.02 HIGH QUALITY + REPORT-ONLY INTERVIEW BRAND • PASS")
+          PY
+
+      - name: S5.02 truth safety gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("app/src/main/java/com/sentongoharuna/pulse")
+          names = (
+              "DevelopUgandaCameraActivity.kt",
+              "DevelopUgandaFivemods9DualOutputExporter.kt",
+              "DevelopUgandaInterviewObservationEngine.kt",
+              "DevelopUgandaInterviewSignalGraphRenderer.kt",
+          )
+          joined = "\n".join((root / name).read_text().upper() for name in names)
+          forbidden = (
+              "TRUTH SCORE",
+              "LIE SCORE",
+              "DECEPTION PROBABILITY",
+              'LABEL = "LYING"',
+              'LABEL = "TRUTHFUL"',
+              "DECEPTIONPROBABILITY",
+              "TRUTHSCORE",
+              "LIESCORE",
+              'PHYSICALCOMPOSURE >= 70 -> "AGITATED"',
+          )
+          for token in forbidden:
+              assert token not in joined, token
+          assert "NOT A LIE DETECTOR" in joined
+          assert "NO TRUTH, DECEPTION OR ANXIETY VERDICT" in joined
+          print("S5.02 OBSERVATION-ONLY SAFETY • PASS")
+          PY
+
+      - name: Prove S5.01 core and all other cameras unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c <<'SHA'
+          820c399cddfa990fba137f9966d9cafcedd1c02292f3009674b260364a32e822  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaAdditiveCameraModes.kt
+          0afa69ad77aaf93e16b68d629ebe65af3893c5e4c568db4580afbbbc3159b653  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaDirectorOverlayView.kt
+          b638ee7b6f179c0fc87a91270c5ccb73df61b7faf77e2a522f5eb512a42aeb29  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaDynamicBurnMonitor.kt
+          c58b5ec3987e1d229363b91f57874acd3c33c478d3ece810b72581e4a18a9625  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewAnnotatedExporter.kt
+          767f0e3724b731da17b26a29fabc78b781cd87e4d816d7541438272b96c89dd1  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewHudView.kt
+          8220bd0e2c56509bbb677205d709455ea6b006a8f624c0c59deb3cab852847d4  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewObservationEngine.kt
+          e5e1f0dbb314a540b2472e1bdd171bb55c2db0628b22e7ef8c344b6ba9fd053e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt
+          7540d06dde1142a431ca3c8d137ac12bf227ade237f4bbae545db86acf367663  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          747c9d1a3811e505fc8cf4babc10ef8ebbf38c218514d48dea37c2299101117e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaColorEngine.kt
+          98836221fe85307759fd7b3a6f64baebeed99929e61d9b1ec77d4aadfd4a55ff  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV272FieldSoundContinuity.kt
+          3958ec3e9f9c813eefdd06277214c1bcfbe0d1076b6bd98acaacd6d57e4f96b7  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection4ProjectWorkflow.kt
+          21948c79dedca796f516415d47ca78f49a41bcc22c726108d3af614ab81d6626  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection4ChronologicalWorkflow.kt
+          e966d02a9cdbe16e0444bf66b5679fa1ed174927a3b43a1f6a289fd32fc9018b  app/src/main/AndroidManifest.xml
+          SHA
+          grep -q 'private var r6RecordingVisualActive = false' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          grep -q 'r6ApplyRecordSurface(r6RecordingVisualActive)' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          grep -q 'translationY = dp(10).toFloat()' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          grep -q 'CAMERA_HANDOFF_SETTLE_MS = 850L' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          python3 ci/verify_source_contracts.py
+          BAD_TASK="connected""DebugAndroidTest"
+          ! grep -q "$BAD_TASK" .github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml
+          echo "S5.01 SIGNAL ENGINE + R6 VISUALS + OTHER CAMERAS PROTECTED"
+
+      - name: Compile Kotlin first
+        timeout-minutes: 12
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:compileDebugKotlin
+
+      - name: Prove API23 manifest without an emulator
+        timeout-minutes: 8
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:processDebugMainManifest
+
+      - name: Bounded unit tests and APK build
+        timeout-minutes: 20
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="R6-S5-02-INTERVIEW-HIGH-FIDELITY-REPORT-${{ github.run_number }}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R6-S5-02-INTERVIEW-HIGH-FIDELITY-REPORT-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
