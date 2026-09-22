@@ -1,4 +1,4 @@
-name: R6 SECTION5 02 - INTERVIEW HIGH FIDELITY REPORT BURN
+name: R6 SECTION5 02A - INTERVIEW HIGH FIDELITY REPORT BURN
 on:
   workflow_dispatch:
   push:
@@ -73,6 +73,29 @@ jobs:
           missing = [name for name in recipe if name not in scripts]
           if missing:
               raise SystemExit("S5.02 STOP: S5.01 recipe incomplete: " + ", ".join(missing))
+
+          # S5.01 carried one stale navigator checksum. Replaying the locked
+          # R6 forward chain deterministically produces 4dba..., whose source
+          # is the accepted R4/R5/R6 icon-only, transparent, extreme-bottom
+          # navigator. The stale 7540... state restores the older panel,
+          # vertical padding and text labels, so accepting it would build
+          # backward. Correct only that gate line; never alter source bytes.
+          protection_name = "Prove protected cameras and R6 visuals unchanged"
+          stale_nav = (
+              "7540d06dde1142a431ca3c8d137ac12bf227ade237f4bbae545db86acf367663  "
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          )
+          forward_nav = (
+              "4dba2231022031c309722d6fb7f72c4906ceda36a5f936b29e23e9bff1cf6c9e  "
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt"
+          )
+          if scripts[protection_name].count(stale_nav) != 1:
+              raise SystemExit("S5.02A STOP: stale S5.01 navigator gate not found exactly once")
+          scripts[protection_name] = scripts[protection_name].replace(
+              stale_nav,
+              forward_nav,
+              1,
+          )
           environment = os.environ.copy()
           environment.setdefault("GITHUB_RUN_NUMBER", "0")
           for name in recipe:
@@ -86,7 +109,7 @@ jobs:
                   env=environment,
               )
               print("::endgroup::", flush=True)
-          print("EXACT S5.01 FORWARD BASELINE RESTORED")
+          print("EXACT S5.01 FORWARD BASELINE RESTORED • TRUE R6 NAVIGATOR GATE REPAIRED")
           PY
 
       - name: Lock immediate S5.01 inputs
@@ -552,7 +575,7 @@ jobs:
           767f0e3724b731da17b26a29fabc78b781cd87e4d816d7541438272b96c89dd1  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewHudView.kt
           8220bd0e2c56509bbb677205d709455ea6b006a8f624c0c59deb3cab852847d4  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewObservationEngine.kt
           e5e1f0dbb314a540b2472e1bdd171bb55c2db0628b22e7ef8c344b6ba9fd053e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt
-          7540d06dde1142a431ca3c8d137ac12bf227ade237f4bbae545db86acf367663  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          4dba2231022031c309722d6fb7f72c4906ceda36a5f936b29e23e9bff1cf6c9e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
           747c9d1a3811e505fc8cf4babc10ef8ebbf38c218514d48dea37c2299101117e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaColorEngine.kt
           98836221fe85307759fd7b3a6f64baebeed99929e61d9b1ec77d4aadfd4a55ff  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV272FieldSoundContinuity.kt
           3958ec3e9f9c813eefdd06277214c1bcfbe0d1076b6bd98acaacd6d57e4f96b7  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection4ProjectWorkflow.kt
@@ -563,10 +586,16 @@ jobs:
           grep -q 'r6ApplyRecordSurface(r6RecordingVisualActive)' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
           grep -q 'translationY = dp(10).toFloat()' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
           grep -q 'CAMERA_HANDOFF_SETTLE_MS = 850L' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          grep -q 'R5: five mode icons at the extreme safe bottom' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          grep -q 'setPadding(dp(8), 0, dp(8), 0)' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          grep -q 'R4 icon only; dot retained.' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          ! grep -q 'surfaceScrim(240)' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          ! grep -q 'outlineScrim(53)' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          ! grep -q 'canvas.drawText(code,' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
           python3 ci/verify_source_contracts.py
           BAD_TASK="connected""DebugAndroidTest"
           ! grep -q "$BAD_TASK" .github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml
-          echo "S5.01 SIGNAL ENGINE + R6 VISUALS + OTHER CAMERAS PROTECTED"
+          echo "S5.02A TRUE R6 ICON-ONLY NAVIGATOR + S5.01 SIGNAL ENGINE + OTHER CAMERAS PROTECTED"
 
       - name: Compile Kotlin first
         timeout-minutes: 12
@@ -586,14 +615,14 @@ jobs:
           set -euo pipefail
           SRC="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$SRC"
-          OUT="R6-S5-02-INTERVIEW-HIGH-FIDELITY-REPORT-${{ github.run_number }}.apk"
+          OUT="R6-S5-02A-INTERVIEW-HIGH-FIDELITY-REPORT-${{ github.run_number }}.apk"
           cp "$SRC" "$OUT"
           sha256sum "$OUT" > "$OUT.sha256"
           echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: R6-S5-02-INTERVIEW-HIGH-FIDELITY-REPORT-${{ github.run_number }}
+          name: R6-S5-02A-INTERVIEW-HIGH-FIDELITY-REPORT-${{ github.run_number }}
           path: |
             ${{ env.APK_NAME }}
             ${{ env.APK_NAME }}.sha256
