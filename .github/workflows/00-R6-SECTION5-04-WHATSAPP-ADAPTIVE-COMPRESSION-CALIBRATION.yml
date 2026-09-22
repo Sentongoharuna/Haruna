@@ -1,4 +1,4 @@
-name: R6 SECTION5 04 - WHATSAPP ADAPTIVE COMPRESSION CALIBRATION
+name: R6 SECTION5 04A - WHATSAPP FIELD CALIBRATED
 on:
   workflow_dispatch:
   push:
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: r6-s5-03-whatsapp-${{ github.ref }}
+  group: r6-s5-04a-whatsapp-field-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -3726,6 +3726,168 @@ jobs:
           80ca2d939560759cc1886033faac1aac6c44f4fafa19e8014bbb3464273dd5c7  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt
           SHA
 
+      - name: Apply S5.04A measured WhatsApp field guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          E="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt"
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+
+          python3 - "$E" "$C" <<'PY'
+          from pathlib import Path
+          import sys
+
+          engine_path, camera_path = map(Path, sys.argv[1:])
+          engine = engine_path.read_text()
+          camera = camera_path.read_text()
+
+          constants_anchor = "    const val DEFAULT_PROFILE_BITRATE_BPS = 5_000_000\n"
+          field_constants = """    // Two matching Kampala field samples measured the ordinary WhatsApp route.
+              // These facts drive operator warnings only; they never alter CLEAN capture.
+              const val FIELD_STANDARD_RETURN_WIDTH = 360
+              const val FIELD_STANDARD_RETURN_HEIGHT = 640
+              const val FIELD_STANDARD_VIDEO_BITRATE_BPS = 1_265_000
+              const val FIELD_STANDARD_SAMPLE_COUNT = 2
+              const val MAX_CALIBRATION_DURATION_SPREAD_MS = 250L
+          """
+          assert engine.count(constants_anchor) == 1
+          engine = engine.replace(
+              constants_anchor,
+              constants_anchor + field_constants,
+          )
+
+          last_result_anchor = (
+              "    fun lastResult(context: Context): String =\n"
+              "        prefs(context).getString(KEY_LAST_RESULT, \"NOT CALIBRATED\") "
+              "?: \"NOT CALIBRATED\"\n"
+          )
+          field_warning = (
+              "\n"
+              "    fun fieldRouteWarning(): String =\n"
+              "        String.format(\n"
+              "            Locale.US,\n"
+              "            \"FIELD MEASURED %d×: STANDARD ROUTE %d×%d • %.2f Mbps. "
+              "SELECT HD.\",\n"
+              "            FIELD_STANDARD_SAMPLE_COUNT,\n"
+              "            FIELD_STANDARD_RETURN_WIDTH,\n"
+              "            FIELD_STANDARD_RETURN_HEIGHT,\n"
+              "            FIELD_STANDARD_VIDEO_BITRATE_BPS / 1_000_000.0,\n"
+              "        )\n"
+          )
+          assert engine.count(last_result_anchor) == 1
+          engine = engine.replace(last_result_anchor, last_result_anchor + field_warning)
+
+          raw_anchor = (
+              "        data class Raw(\n"
+              "            val profile: DeliveryProfile,\n"
+              "            val width: Int,\n"
+              "            val height: Int,\n"
+              "            val bitrate: Long,\n"
+              "            val rotation: Int,\n"
+              "            val edge: Double,\n"
+              "        )\n"
+          )
+          raw_replacement = (
+              "        data class Raw(\n"
+              "            val profile: DeliveryProfile,\n"
+              "            val width: Int,\n"
+              "            val height: Int,\n"
+              "            val bitrate: Long,\n"
+              "            val rotation: Int,\n"
+              "            val durationMs: Long,\n"
+              "            val edge: Double,\n"
+              "        )\n"
+          )
+          assert engine.count(raw_anchor) == 1
+          engine = engine.replace(raw_anchor, raw_replacement)
+
+          constructor_anchor = (
+              "                Raw(profile, displayWidth, displayHeight, bitrate, rotation, edge)\n"
+          )
+          constructor_replacement = (
+              "                Raw(\n"
+              "                    profile, displayWidth, displayHeight, bitrate, rotation,\n"
+              "                    durationMs, edge,\n"
+              "                )\n"
+          )
+          assert engine.count(constructor_anchor) == 1
+          engine = engine.replace(constructor_anchor, constructor_replacement)
+
+          metrics_anchor = (
+              "        }\n\n"
+              "        val maxPixels = raw.maxOf { "
+              "max(1L, it.width.toLong() * it.height.toLong()) }.toDouble()\n"
+          )
+          import_guard = (
+              "        }\n\n"
+              "        require(raw.all { it.width > 0 && it.height > 0 && it.durationMs > 0L }) {\n"
+              "            \"A returned calibration video has unreadable metadata\"\n"
+              "        }\n"
+              "        val durationSpreadMs = raw.maxOf { it.durationMs } - "
+              "raw.minOf { it.durationMs }\n"
+              "        require(durationSpreadMs <= MAX_CALIBRATION_DURATION_SPREAD_MS) {\n"
+              "            \"Returned videos are not the same calibration take \" +\n"
+              "                \"(duration spread ${durationSpreadMs}ms)\"\n"
+              "        }\n\n"
+              "        val maxPixels = raw.maxOf { "
+              "max(1L, it.width.toLong() * it.height.toLong()) }.toDouble()\n"
+          )
+          assert engine.count(metrics_anchor) == 1
+          engine = engine.replace(metrics_anchor, import_guard)
+
+          ready_anchor = (
+              "                    \"$calibrationState\\n\\n\" +\n"
+              "                    \"Your CLEAN master is unchanged. WhatsApp controls its final \" +\n"
+              "                    \"server encode, so choose HD inside WhatsApp when that control is shown.\"\n"
+          )
+          ready_replacement = (
+              "                    \"$calibrationState\\n\\n\" +\n"
+              "                    DevelopUgandaS504WhatsAppEngine.fieldRouteWarning() +\n"
+              "                    \"\\n\\nYour CLEAN master is unchanged. WhatsApp controls its final \" +\n"
+              "                    \"server encode, so choose HD inside WhatsApp when that control is shown.\"\n"
+          )
+          assert camera.count(ready_anchor) == 1
+          camera = camera.replace(ready_anchor, ready_replacement)
+
+          confirm_anchor = (
+              "                \"$routeInstruction\\n\\n\" +\n"
+              "                    \"The app can supply the optimized file but Android does not let it \" +\n"
+              "                    \"force WhatsApp's private HD switch.\"\n"
+          )
+          confirm_replacement = (
+              "                \"$routeInstruction\\n\\n\" +\n"
+              "                    DevelopUgandaS504WhatsAppEngine.fieldRouteWarning() +\n"
+              "                    \"\\n\\nThe app can supply the optimized file but Android does not let it \" +\n"
+              "                    \"force WhatsApp's private HD switch.\"\n"
+          )
+          assert camera.count(confirm_anchor) == 1
+          camera = camera.replace(confirm_anchor, confirm_replacement)
+
+          picker_anchor = (
+              "                \"Choose only the WhatsApp-produced/downloaded ${profile.marker} video. \" +\n"
+              "                    \"Do not choose the original app calibration copy.\"\n"
+          )
+          picker_replacement = (
+              "                \"Choose only the WhatsApp-produced/downloaded ${profile.marker} video. \" +\n"
+              "                    \"Do not choose the original app calibration copy. All returned tests must \" +\n"
+              "                    \"show the same scene and have matching duration.\"\n"
+          )
+          assert camera.count(picker_anchor) == 1
+          camera = camera.replace(picker_anchor, picker_replacement)
+
+          engine_path.write_text(engine)
+          camera_path.write_text(camera)
+          PY
+
+          grep -q 'FIELD_STANDARD_RETURN_WIDTH = 360' "$E"
+          grep -q 'FIELD_STANDARD_RETURN_HEIGHT = 640' "$E"
+          grep -q 'FIELD_STANDARD_VIDEO_BITRATE_BPS = 1_265_000' "$E"
+          grep -q 'MAX_CALIBRATION_DURATION_SPREAD_MS = 250L' "$E"
+          grep -q 'fieldRouteWarning()' "$C"
+          grep -q 'All returned tests must' "$C"
+          echo "25eb6d95cc5f2f19a9cca5279bf623a094df84857b5d69ebb5f1f314fe039181  $E" | sha256sum -c -
+          echo "S5.04A FIELD GUARD APPLIED • TWO MATCHED SAMPLES • CLEAN UNCHANGED"
+
       - name: S5.04 measured adaptive delivery acceptance gate
         shell: bash
         run: |
@@ -3757,6 +3919,12 @@ jobs:
               'TARGET_FPS = 30',
               'DELIVERY_AUDIO_BITRATE_BPS = 192_000',
               'DELIVERY_IFRAME_SECONDS = 2f',
+              'FIELD_STANDARD_RETURN_WIDTH = 360',
+              'FIELD_STANDARD_RETURN_HEIGHT = 640',
+              'FIELD_STANDARD_VIDEO_BITRATE_BPS = 1_265_000',
+              'FIELD_STANDARD_SAMPLE_COUNT = 2',
+              'MAX_CALIBRATION_DURATION_SPREAD_MS = 250L',
+              'fun fieldRouteWarning(): String',
               'context.duSharedPreferences',
               'fun analyseReturnedCopies(',
               'edgeRetention',
@@ -3774,6 +3942,8 @@ jobs:
               'SHARE TO CHAT HD • SELECT HD',
               'CALIBRATE THIS PHONE + WHATSAPP',
               'IMPORT RETURNED TEST VIDEOS',
+              'DevelopUgandaS504WhatsAppEngine.fieldRouteWarning()',
+              'All returned tests must',
               'ActivityResultContracts.OpenDocument()',
               'handleS504ReturnedCalibration(uri)',
               'verifyS504WhatsAppTracks(temp, durationMs)',
@@ -3811,7 +3981,7 @@ jobs:
 
           assert "versionCode = 28704" in gradle
           assert 'versionName = "287.04-r6-section5-04-whatsapp-adaptive-calibration"' in gradle
-          print("S5.04 ADAPTIVE WHATSAPP CALIBRATION • SOURCE GATE PASS")
+          print("S5.04A FIELD-CALIBRATED WHATSAPP GUARD • SOURCE GATE PASS")
           PY
 
       - name: Prove S5.04 is Status-only and CLEAN-safe
@@ -3866,14 +4036,14 @@ jobs:
           set -euo pipefail
           SRC="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$SRC"
-          OUT="R6-S5-04-WHATSAPP-ADAPTIVE-CALIBRATION-${{ github.run_number }}.apk"
+          OUT="R6-S5-04A-WHATSAPP-FIELD-CALIBRATED-${{ github.run_number }}.apk"
           cp "$SRC" "$OUT"
           sha256sum "$OUT" > "$OUT.sha256"
           echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: R6-S5-04-WHATSAPP-ADAPTIVE-CALIBRATION-${{ github.run_number }}
+          name: R6-S5-04A-WHATSAPP-FIELD-CALIBRATED-${{ github.run_number }}
           path: |
             ${{ env.APK_NAME }}
             ${{ env.APK_NAME }}.sha256
