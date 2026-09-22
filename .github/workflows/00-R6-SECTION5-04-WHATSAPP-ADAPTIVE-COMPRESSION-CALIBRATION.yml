@@ -1,4 +1,4 @@
-name: R6 SECTION5 05 - WHATSAPP SOURCE MASTER REPAIR
+name: R6 SECTION5 06 - WHATSAPP CLEAN MASTER SHARE
 on:
   workflow_dispatch:
   push:
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: r6-s5-05-whatsapp-source-master-${{ github.ref }}
+  group: r6-s5-06-whatsapp-clean-master-share-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -4246,6 +4246,286 @@ jobs:
           ! grep -q "$BAD_TASK" .github/workflows/00-R6-SECTION5-04-WHATSAPP-ADAPTIVE-COMPRESSION-CALIBRATION.yml
           echo "S5.05 SOURCE FIX ONLY • MAIN/LIVE/TIKTOK/INTERVIEW UNCHANGED"
 
+      - name: Apply S5.06 clean-master share and SDR range guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d <<'S506_PATCH' > /tmp/s506-clean-master-share.patch
+          ZGlmZiAtLWdpdCBhL2FwcC9idWlsZC5ncmFkbGUua3RzIGIvYXBwL2J1aWxkLmdyYWRsZS5rdHMKaW5kZXggNDQ2YjY1MC4uZTJlOTlmOSAxMDA2NDQKLS0t
+          IGEvYXBwL2J1aWxkLmdyYWRsZS5rdHMKKysrIGIvYXBwL2J1aWxkLmdyYWRsZS5rdHMKQEAgLTExLDggKzExLDggQEAgYW5kcm9pZCB7CiAgICAgICAgIGFw
+          cGxpY2F0aW9uSWQgPSAiY29tLnNlbnRvbmdvaGFydW5hLnB1bHNlIgogICAgICAgICBtaW5TZGsgPSAyMwogICAgICAgICB0YXJnZXRTZGsgPSAzNgotICAg
+          ICAgICB2ZXJzaW9uQ29kZSA9IDI4NzA1Ci0gICAgICAgIHZlcnNpb25OYW1lID0gIjI4Ny4wNS1yNi1zZWN0aW9uNS0wNS13aGF0c2FwcC1zb3VyY2UtbWFz
+          dGVyLXJlcGFpciIKKyAgICAgICAgdmVyc2lvbkNvZGUgPSAyODcwNgorICAgICAgICB2ZXJzaW9uTmFtZSA9ICIyODcuMDYtcjYtc2VjdGlvbjUtMDYtd2hh
+          dHNhcHAtY2xlYW4tbWFzdGVyLXNoYXJlIgogICAgICAgICB0ZXN0SW5zdHJ1bWVudGF0aW9uUnVubmVyID0gImNvbS5zZW50b25nb2hhcnVuYS5wdWxzZS5E
+          ZXZlbG9wVWdhbmRhRml2ZU1vZGVJbnN0cnVtZW50YXRpb24iCiAgICAgfQogCmRpZmYgLS1naXQgYS9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29o
+          YXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5Lmt0IGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0Rl
+          dmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eS5rdAppbmRleCBlOWJmMjA2Li4wZWMwNGUyIDEwMDY0NAotLS0gYS9hcHAvc3JjL21haW4vamF2YS9jb20vc2Vu
+          dG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5Lmt0CisrKyBiL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVu
+          YS9wdWxzZS9EZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkua3QKQEAgLTU2MzcsNyArNTYzNyw3IEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVy
+          YUFjdGl2aXR5IDogQXBwQ29tcGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICAgICAgaWYgKHJlcXVlc3QuY2FsaWJyYXRp
+          b25Db3B5KSB7CiAgICAgICAgICAgICAgICAgICAgICJXQSBDQUwgJHtyZXF1aXJlTm90TnVsbCh3aGF0c2FwcFByb2ZpbGUpLm1hcmtlcn0iCiAgICAgICAg
+          ICAgICAgICAgfSBlbHNlIHsKLSAgICAgICAgICAgICAgICAgICAgIldIQVRTQVBQICR7cmVxdWlyZU5vdE51bGwod2hhdHNhcHBQcm9maWxlKS5tYXJrZXJ9
+          IgorICAgICAgICAgICAgICAgICAgICAiV0hBVFNBUFAgQlJBTkRFRCAke3JlcXVpcmVOb3ROdWxsKHdoYXRzYXBwUHJvZmlsZSkubWFya2VyfSIKICAgICAg
+          ICAgICAgICAgICB9CiAgICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgICJUSUtUT0siCkBAIC01NjQ3LDcgKzU2NDcsNyBAQCBvcGVuIGNs
+          YXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICAgICAgICAg
+          IGlmIChyZXF1ZXN0LmNhbGlicmF0aW9uQ29weSkgewogICAgICAgICAgICAgICAgICAgICAiTW92aWVzL2RldmVsb3AudWdhbmRhL1doYXRzQXBwIENhbGli
+          cmF0aW9uIgogICAgICAgICAgICAgICAgIH0gZWxzZSB7Ci0gICAgICAgICAgICAgICAgICAgICJNb3ZpZXMvZGV2ZWxvcC51Z2FuZGEvU3RhdHVzIFJlYWR5
+          IgorICAgICAgICAgICAgICAgICAgICAiTW92aWVzL2RldmVsb3AudWdhbmRhL1N0YXR1cyBCcmFuZGVkIENvcGllcyIKICAgICAgICAgICAgICAgICB9CiAg
+          ICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgICJNb3ZpZXMvZGV2ZWxvcC51Z2FuZGEvVGlrVG9rIFJlYWR5IgpAQCAtNTY1Nyw3ICs1NjU3
+          LDcgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAg
+          ICAgICAgICAgICAgICBpZiAocmVxdWVzdC5jYWxpYnJhdGlvbkNvcHkpIHsKICAgICAgICAgICAgICAgICAgICAgIkRFVkVMT1BfVUdBTkRBX1M1MDRfQ0FM
+          XyR7cmVxdWlyZU5vdE51bGwod2hhdHNhcHBQcm9maWxlKS5pZH0iCiAgICAgICAgICAgICAgICAgfSBlbHNlIHsKLSAgICAgICAgICAgICAgICAgICAgIkRF
+          VkVMT1BfVUdBTkRBX1dIQVRTQVBQX1JFQURZXyR7cmVxdWlyZU5vdE51bGwod2hhdHNhcHBQcm9maWxlKS5pZH0iCisgICAgICAgICAgICAgICAgICAgICJE
+          RVZFTE9QX1VHQU5EQV9XSEFUU0FQUF9CUkFOREVEXyR7cmVxdWlyZU5vdE51bGwod2hhdHNhcHBQcm9maWxlKS5pZH0iCiAgICAgICAgICAgICAgICAgfQog
+          ICAgICAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgICAgICAiREVWRUxPUF9VR0FOREFfVElLVE9LX1JFQURZIgpAQCAtNTcxMSw4ICs1NzExLDkgQEAg
+          b3BlbiBjbGFzcyBEZXZlbG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAg
+          ICAgICkKIAogICAgICAgICBpZiAoaXNTdGF0dXMpIHsKLSAgICAgICAgICAgIC8vIFM1LjA1IG1ha2VzIHRoZSBXaGF0c0FwcCBjb3B5IGEgbmV1dHJhbCBy
+          ZXNpemUvZW5jb2RlLiBObyBleHRyYQotICAgICAgICAgICAgLy8gY29udHJhc3QsIHNhdHVyYXRpb24sIGxpZ2h0bmVzcyBvciBzaGFycGVuaW5nIGlzIHN0
+          YWNrZWQgaGVyZS4KKyAgICAgICAgICAgIC8vIE5vIGV4cGxpY2l0IGNvbnRyYXN0LCBzYXR1cmF0aW9uLCBsaWdodG5lc3Mgb3Igc2hhcnBlbmluZyBpcwor
+          ICAgICAgICAgICAgLy8gc3RhY2tlZCBoZXJlLiBUaGlzIHJlbWFpbnMgYW4gb3B0aW9uYWwgYnJhbmRlZCByZXNpemUvZW5jb2RlOworICAgICAgICAgICAg
+          Ly8gUzUuMDYgc2hhcmVzIHRoZSB1bnRvdWNoZWQgRkhEIG1hc3RlciBieSBkZWZhdWx0LgogICAgICAgICAgICAgdmlkZW9FZmZlY3RzICs9CiAgICAgICAg
+          ICAgICAgICAgRGV2ZWxvcFVnYW5kYVM1MDRXaGF0c0FwcEVuZ2luZS5kZWxpdmVyeUVmZmVjdHMoCiAgICAgICAgICAgICAgICAgICAgIHJlcXVpcmVOb3RO
+          dWxsKHdoYXRzYXBwUHJvZmlsZSkKQEAgLTU3MzEsNyArNTczMiwxOSBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENv
+          bXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogCiAgICAgICAgIC8vIEZJVkVNT0RTIDEyIHVzZXMgdGhlIGFscmVhZHktZXN0YWJsaXNoZWQg
+          TWVkaWEzIGRlbGl2ZXJ5IGVmZmVjdAogICAgICAgICAvLyBjaGFpbi4gQ0xFQU4gaXMgYSBkaWZmZXJlbnQgVVJJIGFuZCBpcyBuZXZlciBvcGVuZWQgZm9y
+          IHdyaXRpbmcuCi0gICAgICAgIHZpZGVvRWZmZWN0cyArPSBmMTJEZWxpdmVyeUlkZW50aXR5T3ZlcmxheShyZXF1ZXN0LnByb2ZpbGUpCisgICAgICAgIC8v
+          IFRoZSBTdGF0dXMgb3ZlcmxheSBuYW1lcyB0aGUgYWN0dWFsIGRlcml2ZWQgZGltZW5zaW9ucyBpbnN0ZWFkIG9mCisgICAgICAgIC8vIGluY29ycmVjdGx5
+          IGxhYmVsbGluZyBhIDcyMHAgY29weSBhcyB0aGUgMTA4MHAgbWFzdGVyLgorICAgICAgICB2aWRlb0VmZmVjdHMgKz0gZjEyRGVsaXZlcnlJZGVudGl0eU92
+          ZXJsYXkoCisgICAgICAgICAgICByZXF1ZXN0LnByb2ZpbGUsCisgICAgICAgICAgICBpZiAoaXNTdGF0dXMpIHsKKyAgICAgICAgICAgICAgICB2YWwgc3Rh
+          dHVzQ29weSA9IHJlcXVpcmVOb3ROdWxsKHdoYXRzYXBwUHJvZmlsZSkKKyAgICAgICAgICAgICAgICAiUzUuMDYgV0EgQlJBTkRFRCBDT1BZIOKAoiAke3N0
+          YXR1c0NvcHkud2lkdGh9w5cke3N0YXR1c0NvcHkuaGVpZ2h0fSDigKIgIiArCisgICAgICAgICAgICAgICAgICAgICIke0RldmVsb3BVZ2FuZGFTNTA0V2hh
+          dHNBcHBFbmdpbmUuVEFSR0VUX0ZQU31GUFMg4oCiIEgyNjRcbiIgKworICAgICAgICAgICAgICAgICAgICAiQ0xFQU4gRkhEIE1BU1RFUiBTVE9SRUQgU0VQ
+          QVJBVEVMWSIKKyAgICAgICAgICAgIH0gZWxzZSB7CisgICAgICAgICAgICAgICAgbnVsbAorICAgICAgICAgICAgfSwKKyAgICAgICAgKQogCiAgICAgICAg
+          IHZhbCBlZmZlY3RzID0gRWZmZWN0cyhlbXB0eUxpc3QoKSwgdmlkZW9FZmZlY3RzKQogCkBAIC01NzYxLDcgKzU3NzQsMTAgQEAgb3BlbiBjbGFzcyBEZXZl
+          bG9wVWdhbmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgIEVkaXRlZE1lZGlh
+          SXRlbVNlcXVlbmNlLndpdGhBdWRpb0FuZFZpZGVvRnJvbShsaXN0T2YoZWRpdGVkKSkKICAgICAgICAgdmFsIGNvbXBvc2l0aW9uQnVpbGRlciA9IENvbXBv
+          c2l0aW9uLkJ1aWxkZXIobGlzdE9mKHNlcXVlbmNlKSkKIAotICAgICAgICBpZiAoQnVpbGQuVkVSU0lPTi5TREtfSU5UID49IEJ1aWxkLlZFUlNJT05fQ09E
+          RVMuUSkgeworICAgICAgICAvLyBUaGUgU3RhdHVzIHNvdXJjZSBpcyBhbHJlYWR5IHN0YW5kYXJkIFNEUiBCVC43MDkgbGltaXRlZC1yYW5nZS4KKyAgICAg
+          ICAgLy8gSERSLXRvLVNEUiB0b25lIG1hcHBpbmcgaXMgZGVmaW5lZCBmb3IgSERSIGlucHV0IGFuZCBtYWRlIHRoaXMKKyAgICAgICAgLy8gcGhvbmUncyBk
+          ZXJpdmVkIFNEUiBjb3B5IGV4cGFuZCBjb250cmFzdCBhbmQgY3J1c2ggc2hhZG93cy4KKyAgICAgICAgaWYgKCFpc1N0YXR1cyAmJiBCdWlsZC5WRVJTSU9O
+          LlNES19JTlQgPj0gQnVpbGQuVkVSU0lPTl9DT0RFUy5RKSB7CiAgICAgICAgICAgICBjb21wb3NpdGlvbkJ1aWxkZXIuc2V0SGRyTW9kZSgKICAgICAgICAg
+          ICAgICAgICBDb21wb3NpdGlvbi5IRFJfTU9ERV9UT05FX01BUF9IRFJfVE9fU0RSX1VTSU5HX09QRU5fR0wKICAgICAgICAgICAgICkKQEAgLTU5MTEsOSAr
+          NTkyNywxMiBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVu
+          ZQogICAgICAgICAgICAgICAgIH0KICAgICB9CiAKLSAgICBwcml2YXRlIGZ1biBmMTJEZWxpdmVyeUlkZW50aXR5T3ZlcmxheShwcm9maWxlOiBEZXZlbG9w
+          VWdhbmRhTW9kZVByb2ZpbGUpOiBNZWRpYTNPdmVybGF5RWZmZWN0IHsKKyAgICBwcml2YXRlIGZ1biBmMTJEZWxpdmVyeUlkZW50aXR5T3ZlcmxheSgKKyAg
+          ICAgICAgcHJvZmlsZTogRGV2ZWxvcFVnYW5kYU1vZGVQcm9maWxlLAorICAgICAgICBsYWJlbE92ZXJyaWRlOiBTdHJpbmc/ID0gbnVsbCwKKyAgICApOiBN
+          ZWRpYTNPdmVybGF5RWZmZWN0IHsKICAgICAgICAgdmFsIGlkZW50aXR5ID0gRGV2ZWxvcFVnYW5kYUZpdmVtb2RzMTJJZGVudGl0eS5mb3JQYWdlKHByb2Zp
+          bGUucGFnZSkKLSAgICAgICAgdmFsIGxhYmVsID0gU3Bhbm5hYmxlU3RyaW5nKGlkZW50aXR5LmJ1cm5MYWJlbCkuYXBwbHkgeworICAgICAgICB2YWwgbGFi
+          ZWwgPSBTcGFubmFibGVTdHJpbmcobGFiZWxPdmVycmlkZSA/OiBpZGVudGl0eS5idXJuTGFiZWwpLmFwcGx5IHsKICAgICAgICAgICAgIHNldFNwYW4oRm9y
+          ZWdyb3VuZENvbG9yU3BhbihDb2xvci5XSElURSksIDAsIGxlbmd0aCwgU3Bhbm5hYmxlLlNQQU5fRVhDTFVTSVZFX0VYQ0xVU0lWRSkKICAgICAgICAgICAg
+          IHNldFNwYW4oQmFja2dyb3VuZENvbG9yU3BhbihDb2xvci5hcmdiKDE4NCwgMCwgMCwgMCkpLCAwLCBsZW5ndGgsIFNwYW5uYWJsZS5TUEFOX0VYQ0xVU0lW
+          RV9FWENMVVNJVkUpCiAgICAgICAgICAgICBzZXRTcGFuKFR5cGVmYWNlU3Bhbigic2Fucy1zZXJpZi1tZWRpdW0iKSwgMCwgbGVuZ3RoLCBTcGFubmFibGUu
+          U1BBTl9FWENMVVNJVkVfRVhDTFVTSVZFKQpAQCAtNjE1MSwxMSArNjE3MCwxOCBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6
+          IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICAgICAgICAgICJERUZBVUxUIOKAoiBDQUxJQlJBVElPTiBSRUNPTU1F
+          TkRFRCIKICAgICAgICAgICAgIH0KICAgICAgICAgdmFsIGFjdGlvbnMgPSBsaW5rZWRNYXBPZjxTdHJpbmcsICgpIC0+IFVuaXQ+KCkKLSAgICAgICAgYWN0
+          aW9uc1siU0hBUkUgVE8gU1RBVFVTIOKAoiBTRUxFQ1QgSEQiXSA9IHsKLSAgICAgICAgICAgIGNvbmZpcm1TNTA0V2hhdHNBcHBTaGFyZShkZWxpdmVyeVVy
+          aSwgIlNUQVRVUyIpCisgICAgICAgIHZhbCBicmFuZGVkTGFiZWwgPSAiQlJBTkRFRCAke3Byb2ZpbGUud2lkdGh9w5cke3Byb2ZpbGUuaGVpZ2h0fSBDT1BZ
+          IgorICAgICAgICBhY3Rpb25zWyJTSEFSRSBDTEVBTiBGSEQgVE8gU1RBVFVTIOKAoiBTRUxFQ1QgSEQiXSA9IHsKKyAgICAgICAgICAgIGNvbmZpcm1TNTA0
+          V2hhdHNBcHBTaGFyZShtYXN0ZXJVcmksICJTVEFUVVMiLCAiQ0xFQU4gRkhEIE1BU1RFUiIpCisgICAgICAgIH0KKyAgICAgICAgYWN0aW9uc1siU0hBUkUg
+          Q0xFQU4gRkhEIFRPIENIQVQg4oCiIFNFTEVDVCBIRCJdID0geworICAgICAgICAgICAgY29uZmlybVM1MDRXaGF0c0FwcFNoYXJlKG1hc3RlclVyaSwgIkNI
+          QVQgSEQiLCAiQ0xFQU4gRkhEIE1BU1RFUiIpCiAgICAgICAgIH0KLSAgICAgICAgYWN0aW9uc1siU0hBUkUgVE8gQ0hBVCBIRCDigKIgU0VMRUNUIEhEIl0g
+          PSB7Ci0gICAgICAgICAgICBjb25maXJtUzUwNFdoYXRzQXBwU2hhcmUoZGVsaXZlcnlVcmksICJDSEFUIEhEIikKKyAgICAgICAgYWN0aW9uc1siU0hBUkUg
+          JGJyYW5kZWRMYWJlbCBUTyBTVEFUVVMiXSA9IHsKKyAgICAgICAgICAgIGNvbmZpcm1TNTA0V2hhdHNBcHBTaGFyZShkZWxpdmVyeVVyaSwgIlNUQVRVUyIs
+          IGJyYW5kZWRMYWJlbCkKKyAgICAgICAgfQorICAgICAgICBhY3Rpb25zWyJTSEFSRSAkYnJhbmRlZExhYmVsIFRPIENIQVQiXSA9IHsKKyAgICAgICAgICAg
+          IGNvbmZpcm1TNTA0V2hhdHNBcHBTaGFyZShkZWxpdmVyeVVyaSwgIkNIQVQgSEQiLCBicmFuZGVkTGFiZWwpCiAgICAgICAgIH0KICAgICAgICAgYWN0aW9u
+          c1siQ0FMSUJSQVRFIFRISVMgUEhPTkUgKyBXSEFUU0FQUCJdID0gewogICAgICAgICAgICAgcXVldWVTNTA0Q2FsaWJyYXRpb24obWFzdGVyVXJpLCBzb3Vy
+          Y2VOYW1lKQpAQCAtNjE3NiwxNCArNjIwMiwxNiBAQCBvcGVuIGNsYXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5
+          KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICB9CiAKICAgICAgICAgQWxlcnREaWFsb2cuQnVpbGRlcih0aGlzKQotICAgICAgICAgICAgLnNldFRp
+          dGxlKCJTNS4wNCBXSEFUU0FQUCBDT1BZIFJFQURZIikKKyAgICAgICAgICAgIC5zZXRUaXRsZSgiUzUuMDYgQ0xFQU4gTUFTVEVSIFJFQURZIikKICAgICAg
+          ICAgICAgIC5zZXRNZXNzYWdlKAogICAgICAgICAgICAgICAgICIke3Byb2ZpbGUubGFiZWx9IOKAoiAke3Byb2ZpbGUudmlkZW9CaXRyYXRlQnBzIC8gMV8w
+          MDBfMDAwfSBNYnBzIOKAoiAiICsKLSAgICAgICAgICAgICAgICAgICAgIkguMjY0IFNEUiDigKIgMzAgRlBTIOKAoiAyIFNFQ09ORCBHT1BcblxuIiArCisg
+          ICAgICAgICAgICAgICAgICAgICJPUFRJT05BTCBCUkFOREVEIENPUFkg4oCiIEguMjY0IFNEUiDigKIgMzAgRlBTIOKAoiAyIFNFQ09ORCBHT1BcblxuIiAr
+          CiAgICAgICAgICAgICAgICAgICAgICIkY2FsaWJyYXRpb25TdGF0ZVxuXG4iICsKICAgICAgICAgICAgICAgICAgICAgRGV2ZWxvcFVnYW5kYVM1MDRXaGF0
+          c0FwcEVuZ2luZS5maWVsZFJvdXRlV2FybmluZygpICsKLSAgICAgICAgICAgICAgICAgICAgIlxuXG5Zb3VyIENMRUFOIG1hc3RlciBpcyB1bmNoYW5nZWQu
+          IFdoYXRzQXBwIGNvbnRyb2xzIGl0cyBmaW5hbCAiICsKLSAgICAgICAgICAgICAgICAgICAgInNlcnZlciBlbmNvZGUsIHNvIGNob29zZSBIRCBpbnNpZGUg
+          V2hhdHNBcHAgd2hlbiB0aGF0IGNvbnRyb2wgaXMgc2hvd24uIgorICAgICAgICAgICAgICAgICAgICAiXG5cbkNMRUFOIEZIRCBNQVNURVIgaXMgbm93IHRo
+          ZSBwcmltYXJ5IFN0YXR1cyBhbmQgQ2hhdCBzaGFyZSBmaWxlLiAiICsKKyAgICAgICAgICAgICAgICAgICAgIlRoZSByZXNpemVkIGZpbGUgaXMgY2xlYXJs
+          eSBtYXJrZWQgYXMgYW4gb3B0aW9uYWwgYnJhbmRlZCBjb3B5LiAiICsKKyAgICAgICAgICAgICAgICAgICAgIldoYXRzQXBwIGNvbnRyb2xzIGl0cyBmaW5h
+          bCBzZXJ2ZXIgZW5jb2RlLCBzbyBjaG9vc2UgSEQgaW5zaWRlICIgKworICAgICAgICAgICAgICAgICAgICAiV2hhdHNBcHAgd2hlbiB0aGF0IGNvbnRyb2wg
+          aXMgc2hvd24uIgogICAgICAgICAgICAgKQogICAgICAgICAgICAgLnNldEl0ZW1zKGFjdGlvbnMua2V5cy50b1R5cGVkQXJyYXkoKSkgeyBfLCB3aGljaCAt
+          PgogICAgICAgICAgICAgICAgIGFjdGlvbnMudmFsdWVzLmVsZW1lbnRBdCh3aGljaCkuaW52b2tlKCkKQEAgLTYxOTIsNyArNjIyMCwxMSBAQCBvcGVuIGNs
+          YXNzIERldmVsb3BVZ2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICAgICAgLnNo
+          b3coKQogICAgIH0KIAotICAgIHByaXZhdGUgZnVuIGNvbmZpcm1TNTA0V2hhdHNBcHBTaGFyZSh1cmk6IFVyaSwgcm91dGU6IFN0cmluZykgeworICAgIHBy
+          aXZhdGUgZnVuIGNvbmZpcm1TNTA0V2hhdHNBcHBTaGFyZSgKKyAgICAgICAgdXJpOiBVcmksCisgICAgICAgIHJvdXRlOiBTdHJpbmcsCisgICAgICAgIHNv
+          dXJjZUxhYmVsOiBTdHJpbmcsCisgICAgKSB7CiAgICAgICAgIHZhbCByb3V0ZUluc3RydWN0aW9uID0KICAgICAgICAgICAgIGlmIChyb3V0ZSA9PSAiU1RB
+          VFVTIikgewogICAgICAgICAgICAgICAgICJJbiBXaGF0c0FwcCBjaG9vc2UgTXkgU3RhdHVzL1VwZGF0ZXMuIFNlbGVjdCBIRCBpZiBXaGF0c0FwcCBzaG93
+          cyB0aGUgSEQgY29udHJvbC4iCkBAIC02MjAwLDExICs2MjMyLDEyIEBAIG9wZW4gY2xhc3MgRGV2ZWxvcFVnYW5kYUNhbWVyYUFjdGl2aXR5IDogQXBwQ29t
+          cGF0QWN0aXZpdHkoKSwgU2Vuc29yRXZlbnRMaXN0ZW5lCiAgICAgICAgICAgICAgICAgIkluIFdoYXRzQXBwIGNob29zZSB0aGUgY2hhdC4gU2VsZWN0IEhE
+          IGJlZm9yZSBzZW5kaW5nIHdoZW4gdGhlIEhEIGNvbnRyb2wgaXMgc2hvd24uIgogICAgICAgICAgICAgfQogICAgICAgICBBbGVydERpYWxvZy5CdWlsZGVy
+          KHRoaXMpCi0gICAgICAgICAgICAuc2V0VGl0bGUoIiRyb3V0ZSDigKIgU0VMRUNUIEhEIikKKyAgICAgICAgICAgIC5zZXRUaXRsZSgiJHNvdXJjZUxhYmVs
+          IOKAoiAkcm91dGUiKQogICAgICAgICAgICAgLnNldE1lc3NhZ2UoCi0gICAgICAgICAgICAgICAgIiRyb3V0ZUluc3RydWN0aW9uXG5cbiIgKworICAgICAg
+          ICAgICAgICAgICIkc291cmNlTGFiZWwgc2VsZWN0ZWQuXG5cbiRyb3V0ZUluc3RydWN0aW9uXG5cbiIgKwogICAgICAgICAgICAgICAgICAgICBEZXZlbG9w
+          VWdhbmRhUzUwNFdoYXRzQXBwRW5naW5lLmZpZWxkUm91dGVXYXJuaW5nKCkgKwotICAgICAgICAgICAgICAgICAgICAiXG5cblRoZSBhcHAgY2FuIHN1cHBs
+          eSB0aGUgb3B0aW1pemVkIGZpbGUgYnV0IEFuZHJvaWQgZG9lcyBub3QgbGV0IGl0ICIgKworICAgICAgICAgICAgICAgICAgICAiXG5cblVzZSBDTEVBTiBG
+          SEQgTUFTVEVSIGZvciB0aGUgY2xvc2VzdCBjYW1lcmEtb3JpZ2luYWwgaW1hZ2UuICIgKworICAgICAgICAgICAgICAgICAgICAiQW5kcm9pZCBkb2VzIG5v
+          dCBsZXQgdGhpcyBhcHAgIiArCiAgICAgICAgICAgICAgICAgICAgICJmb3JjZSBXaGF0c0FwcCdzIHByaXZhdGUgSEQgc3dpdGNoLiIKICAgICAgICAgICAg
+          ICkKICAgICAgICAgICAgIC5zZXROZWdhdGl2ZUJ1dHRvbigiQkFDSyIsIG51bGwpCkBAIC02MjI4LDcgKzYyNjEsNyBAQCBvcGVuIGNsYXNzIERldmVsb3BV
+          Z2FuZGFDYW1lcmFBY3Rpdml0eSA6IEFwcENvbXBhdEFjdGl2aXR5KCksIFNlbnNvckV2ZW50TGlzdGVuZQogICAgICAgICAgICAgc3RhcnRBY3Rpdml0eSgK
+          ICAgICAgICAgICAgICAgICBJbnRlbnQuY3JlYXRlQ2hvb3NlcigKICAgICAgICAgICAgICAgICAgICAgc2hhcmUuc2V0UGFja2FnZShudWxsKSwKLSAgICAg
+          ICAgICAgICAgICAgICAgIlNoYXJlIFM1LjA0ICRyb3V0ZSB2aWRlbyIKKyAgICAgICAgICAgICAgICAgICAgIlNoYXJlIFM1LjA2ICRyb3V0ZSB2aWRlbyIK
+          ICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICApCiAgICAgICAgIH0KQEAgLTEyMDE0LDcgKzEyMDQ3LDcgQEAgb3BlbiBjbGFzcyBEZXZlbG9wVWdh
+          bmRhQ2FtZXJhQWN0aXZpdHkgOiBBcHBDb21wYXRBY3Rpdml0eSgpLCBTZW5zb3JFdmVudExpc3RlbmUKICAgICAgICAgICAgICAgICAgICAgICAgICAgICBz
+          NTAzV2hhdHNBcHBTdXBwb3J0CiAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgIHYyNDdMYXN0RGV0YWlsU3RhdHVzID0K
+          LSAgICAgICAgICAgICAgICAgICAgICAgICJTNS4wNSBXQSDigKIgTkFUSVZFIENMRUFOIE1BU1RFUiDigKIgTkVVVFJBTCBERUxJVkVSWSIKKyAgICAgICAg
+          ICAgICAgICAgICAgICAgICJTNS4wNiBXQSDigKIgTkFUSVZFIENMRUFOIE1BU1RFUiDigKIgTUFTVEVSLUZJUlNUIFNIQVJFIgogICAgICAgICAgICAgICAg
+          ICAgICB2MjU1UmVzdG9yZUF1dG9Gb2N1cygpCiAgICAgICAgICAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgICAgICAgICAgdjI0NEFwcGx5Q2FtZXJh
+          MkNvbnRyb2xzKCkKZGlmZiAtLWdpdCBhL2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhTW9kZVByb2Zp
+          bGVzLmt0IGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFNb2RlUHJvZmlsZXMua3QKaW5kZXggYWVk
+          ZDk3MS4uOTMwNzY0MCAxMDA2NDQKLS0tIGEvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFNb2RlUHJv
+          ZmlsZXMua3QKKysrIGIvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVsb3BVZ2FuZGFNb2RlUHJvZmlsZXMua3QKQEAg
+          LTE3NCwxMCArMTc0LDEwIEBAIG9iamVjdCBEZXZlbG9wVWdhbmRhTW9kZVByb2ZpbGVzIHsKICAgICAgICAgZGVzdGluYXRpb24gPSBEZXZlbG9wVWdhbmRh
+          U3RhdHVzQ2FtZXJhQWN0aXZpdHk6OmNsYXNzLmphdmEsCiAgICAgICAgIGdseXBoID0gRGV2ZWxvcFVnYW5kYU1vZGVHbHlwaC5TVEFUVVNfQlVCQkxFLAog
+          ICAgICAgICBiZXN0Rm9yID0gIldIQVRTQVBQIFNUQVRVUyIsCi0gICAgICAgIGluc3RydWN0aW9uID0gIk5BVElWRSBDTEVBTiBGSEQgTUFTVEVSICsgTkVV
+          VFJBTCBTVEFUVVMgLyBDSEFUIEhEIENPUFkiLAorICAgICAgICBpbnN0cnVjdGlvbiA9ICJOQVRJVkUgQ0xFQU4gRkhEIE1BU1RFUiBGSVJTVCArIE9QVElP
+          TkFMIEJSQU5ERUQgQ09QWSIsCiAgICAgICAgIGFjY2VudENvbG9yID0gRGV2ZWxvcFVnYW5kYUZpdmVtb2RzOFRoZW1lLmFjY2VudCwKICAgICAgICAgY2hy
+          b21lQWNjZW50Q29sb3IgPSBEZXZlbG9wVWdhbmRhRml2ZW1vZHM4VGhlbWUubW9kZVN0YXR1cywKLSAgICAgICAgcXVhbGl0eU5hbWUgPSAiQ0xFQU4gRkhE
+          IOKAoiBXQSBBREFQVElWRSIsCisgICAgICAgIHF1YWxpdHlOYW1lID0gIkNMRUFOIEZIRCDigKIgTUFTVEVSIEZJUlNUIiwKICAgICAgICAgc2NlbmVOYW1l
+          ID0gIlJFUE9SVEVSIiwKICAgICAgICAgbG9va05hbWUgPSAiTkFUVVJBTCIsCiAgICAgICAgIGRlbGl2ZXJ5UHJvZmlsZSA9IERldmVsb3BVZ2FuZGFEZWxp
+          dmVyeVByb2ZpbGUuV0hBVFNBUFBfU1RBVFVTLApkaWZmIC0tZ2l0IGEvYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL0RldmVs
+          b3BVZ2FuZGFTNTA0V2hhdHNBcHBFbmdpbmUua3QgYi9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYVM1
+          MDRXaGF0c0FwcEVuZ2luZS5rdAppbmRleCAwMzllZjk4Li4yZjJkZjllIDEwMDY0NAotLS0gYS9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1
+          bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYVM1MDRXaGF0c0FwcEVuZ2luZS5rdAorKysgYi9hcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVs
+          c2UvRGV2ZWxvcFVnYW5kYVM1MDRXaGF0c0FwcEVuZ2luZS5rdApAQCAtMjQsNyArMjQsNyBAQCBpbXBvcnQga290bGluLm1hdGgubWF4CiAgKi8KIG9iamVj
+          dCBEZXZlbG9wVWdhbmRhUzUwNFdoYXRzQXBwRW5naW5lIHsKICAgICBjb25zdCB2YWwgRU5HSU5FX0lEID0gIlI2LVM1LjA0LVdIQVRTQVBQLUFEQVBUSVZF
+          LUNBTElCUkFUSU9OIgotICAgIGNvbnN0IHZhbCBTT1VSQ0VfUkVQQUlSX0lEID0gIlI2LVM1LjA1LVdIQVRTQVBQLU5FVVRSQUwtREVMSVZFUlkiCisgICAg
+          Y29uc3QgdmFsIFNPVVJDRV9SRVBBSVJfSUQgPSAiUjYtUzUuMDYtV0hBVFNBUFAtTUFTVEVSLUZJUlNULVJBTkdFLUdVQVJEIgogICAgIGNvbnN0IHZhbCBU
+          QVJHRVRfRlBTID0gMzAKICAgICBjb25zdCB2YWwgREVMSVZFUllfQVVESU9fQklUUkFURV9CUFMgPSAxOTJfMDAwCiAgICAgY29uc3QgdmFsIERFTElWRVJZ
+          X0lGUkFNRV9TRUNPTkRTID0gMmYKZGlmZiAtLWdpdCBhL2NpL3ZlcmlmeV9zb3VyY2VfY29udHJhY3RzLnB5IGIvY2kvdmVyaWZ5X3NvdXJjZV9jb250cmFj
+          dHMucHkKaW5kZXggYWYxOTZiZi4uODI5MDMzOSAxMDA2NDQKLS0tIGEvY2kvdmVyaWZ5X3NvdXJjZV9jb250cmFjdHMucHkKKysrIGIvY2kvdmVyaWZ5X3Nv
+          dXJjZV9jb250cmFjdHMucHkKQEAgLTI0Niw3ICsyNDYsNyBAQCBuZWVkKCJyb290LmFkZFZpZXcoXG4gICAgICAgICAgICB0b3BQYW5lbCIgbm90IGluIGxp
+          dmVfc291cmNlLAogICAgICAibGVnYWN5IExJVkUgc3RhdHVzIHBhbmVsIGlzIHZpc2libGUiKQogbmVlZCgiaWRlbnRpdHk/LmJ1cm5MYWJlbCIgaW4gZXhw
+          b3J0ZXIsCiAgICAgICJtb2RlIGNvZGUgKyBuYW1lIGxlZnQgdGhlIGV4aXN0aW5nIEJSQU5EIG92ZXJsYXkgcGF0aCIpCi1uZWVkKCJ2aWRlb0VmZmVjdHMg
+          Kz0gZjEyRGVsaXZlcnlJZGVudGl0eU92ZXJsYXkocmVxdWVzdC5wcm9maWxlKSIgaW4gY2FtZXJhLAorbmVlZCgidmlkZW9FZmZlY3RzICs9IGYxMkRlbGl2
+          ZXJ5SWRlbnRpdHlPdmVybGF5KCIgaW4gY2FtZXJhLAogICAgICAic29jaWFsL3N0YXR1cyBkZWxpdmVyeSBjb3BpZXMgbG9zdCB0aGVpciBleGlzdGluZyBN
+          ZWRpYTMgaWRlbnRpdHkgb3ZlcmxheSIpCiAKIHRoZW1lMTIgPSByZWFkKCJEZXZlbG9wVWdhbmRhRml2ZW1vZHM4VGhlbWUua3QiKQo=
+          S506_PATCH
+          echo "df331e9cf9789b8b4e1d88939c69f44b71b1d3221a9483a2e84525a2a494dced  /tmp/s506-clean-master-share.patch" | sha256sum -c -
+          python3 - /tmp/s506-clean-master-share.patch <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          patch = Path(sys.argv[1])
+          expected = [
+              "app/build.gradle.kts",
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt",
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt",
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt",
+              "ci/verify_source_contracts.py",
+          ]
+          output = subprocess.check_output(
+              ["git", "apply", "--numstat", str(patch)],
+              text=True,
+          )
+          actual = [line.split("\t", 2)[2] for line in output.splitlines() if line]
+          assert actual == expected, actual
+          PY
+          git apply --check /tmp/s506-clean-master-share.patch
+          git apply /tmp/s506-clean-master-share.patch
+          echo "S5.06 APPLIED • CLEAN FHD MASTER FIRST • OPTIONAL BRANDED COPY"
+
+      - name: S5.06 measured master-share acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          M="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt"
+          E4="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt"
+          CI="ci/verify_source_contracts.py"
+
+          sha256sum -c <<'SHA'
+          2d9bd93cb3b164b4c94a73b2829465a9b4c36f3dbb3f13ea55d7d8cd71d6104b  app/build.gradle.kts
+          cabec92ac167e7a446ec6b519de1cd0b25552167ebaa8aba34d1674f5f3c5747  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          ca6e7d7da292425cf5d058d480a61fb51070bbbcfcc29c78eea6ed43ffce237e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt
+          7b11c3cc13dfc8f2e4ee1d923523f23b429e28835a22bcfa300b5cffe823703b  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS503WhatsAppEngine.kt
+          06a2125d78ff1ab1ed3cdacdb15caddd50b02914003babc832840fdc9c6ef260  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt
+          7cbc01c94e404375daad65748173408dd611762f84f3ebe5aaf88f8e93e79718  ci/verify_source_contracts.py
+          SHA
+
+          python3 - "$C" "$M" "$E4" "$CI" app/build.gradle.kts <<'PY'
+          from pathlib import Path
+          import hashlib
+          import sys
+
+          camera, profiles, engine4, contracts, gradle = (
+              Path(path).read_text() for path in sys.argv[1:]
+          )
+
+          # Two field clips prove the source repair succeeded: the master is
+          # now 1080x1920, standard SDR BT.709 limited-range and about 24 Mbps.
+          # The derived 720p copy still expanded luma/chroma and crushed
+          # shadows, so only the untouched master may be the primary share.
+          for token in (
+              'confirmS504WhatsAppShare(masterUri, "STATUS", "CLEAN FHD MASTER")',
+              'confirmS504WhatsAppShare(masterUri, "CHAT HD", "CLEAN FHD MASTER")',
+              'confirmS504WhatsAppShare(deliveryUri, "STATUS", brandedLabel)',
+              'confirmS504WhatsAppShare(deliveryUri, "CHAT HD", brandedLabel)',
+              'val brandedLabel = "BRANDED ${profile.width}×${profile.height} COPY"',
+              '"Movies/develop.uganda/Status Branded Copies"',
+              '"DEVELOP_UGANDA_WHATSAPP_BRANDED_${requireNotNull(whatsappProfile).id}"',
+              '"S5.06 WA BRANDED COPY • ${statusCopy.width}×${statusCopy.height} • "',
+              'labelOverride ?: identity.burnLabel',
+              'if (!isStatus && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)',
+              'S5.06 CLEAN MASTER READY',
+              'S5.06 WA • NATIVE CLEAN MASTER • MASTER-FIRST SHARE',
+          ):
+              assert token in camera, "S5.06 camera token: " + token
+
+          assert 'confirmS504WhatsAppShare(deliveryUri, "STATUS")' not in camera
+          assert 'confirmS504WhatsAppShare(deliveryUri, "CHAT HD")' not in camera
+          status_export = camera[
+              camera.index("    private fun startNextAdditiveDelivery()"):
+              camera.index("    private fun verifyAdditiveDelivery(")
+          ]
+          assert status_export.count(
+              "Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL"
+          ) == 1
+          hdr_guard = status_export[
+              status_export.index("if (!isStatus && Build.VERSION.SDK_INT"):
+              status_export.index("val videoSettings =")
+          ]
+          assert "HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL" in hdr_guard
+
+          for token in (
+              'instruction = "NATIVE CLEAN FHD MASTER FIRST + OPTIONAL BRANDED COPY"',
+              'qualityName = "CLEAN FHD • MASTER FIRST"',
+          ):
+              assert token in profiles, "S5.06 profile token: " + token
+          assert (
+              'SOURCE_REPAIR_ID = "R6-S5.06-WHATSAPP-MASTER-FIRST-RANGE-GUARD"'
+              in engine4
+          )
+          assert (
+              'need("videoEffects += f12DeliveryIdentityOverlay(" in camera'
+              in contracts
+          )
+
+          protected_sections = (
+              ("    val main =", "    val live =", "22f8e9739aaf8d864aa2110c05ab49608e0e895a83ae404af5c02e3e0cde9ecd"),
+              ("    val live =", "    val tikTok =", "19f53380c769a3ac12ae51a0d9d1b860e9d76a052d45c1a428b6db6a5c001ab7"),
+              ("    val tikTok =", "    val status =", "6549da459d930a68feef2cffa76bd08d4692e878a98aa800bd5c5c3fc7f77db7"),
+              ("    val interview =", "    private val navigatorOrder", "92f772224b0a2f9eeb0be28a9994154e6fd0120e7d96eeb0ee972bc5b9fd18b0"),
+          )
+          for first, last, expected in protected_sections:
+              section = profiles[
+                  profiles.index(first):profiles.index(last, profiles.index(first) + 1)
+              ]
+              assert hashlib.sha256(section.encode()).hexdigest() == expected, first
+
+          assert "versionCode = 28706" in gradle
+          assert (
+              'versionName = "287.06-r6-section5-06-whatsapp-clean-master-share"'
+              in gradle
+          )
+          print("S5.06 CLEAN MASTER SHARE • STATIC GATE PASS")
+          PY
+
+          python3 ci/verify_source_contracts.py
+          test "$(wc -c < .github/workflows/00-R6-SECTION5-04-WHATSAPP-ADAPTIVE-COMPRESSION-CALIBRATION.yml)" -lt 512000
+          BAD_TASK="connected""DebugAndroidTest"
+          ! grep -q "$BAD_TASK" .github/workflows/00-R6-SECTION5-04-WHATSAPP-ADAPTIVE-COMPRESSION-CALIBRATION.yml
+          echo "S5.06 STATUS SHARE FIX ONLY • MAIN/LIVE/TIKTOK/INTERVIEW UNCHANGED"
+
       - name: Compile Kotlin first
         timeout-minutes: 12
         run: gradle --no-daemon --console=plain --max-workers=2 :app:compileDebugKotlin
@@ -4264,14 +4544,14 @@ jobs:
           set -euo pipefail
           SRC="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$SRC"
-          OUT="R6-S5-05-WHATSAPP-SOURCE-MASTER-REPAIR-${{ github.run_number }}.apk"
+          OUT="R6-S5-06-WHATSAPP-CLEAN-MASTER-SHARE-${{ github.run_number }}.apk"
           cp "$SRC" "$OUT"
           sha256sum "$OUT" > "$OUT.sha256"
           echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: R6-S5-05-WHATSAPP-SOURCE-MASTER-REPAIR-${{ github.run_number }}
+          name: R6-S5-06-WHATSAPP-CLEAN-MASTER-SHARE-${{ github.run_number }}
           path: |
             ${{ env.APK_NAME }}
             ${{ env.APK_NAME }}.sha256
