@@ -1,4 +1,4 @@
-name: R6 SECTION5 04A - WHATSAPP FIELD CALIBRATED
+name: R6 SECTION5 05 - WHATSAPP SOURCE MASTER REPAIR
 on:
   workflow_dispatch:
   push:
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: r6-s5-04a-whatsapp-field-${{ github.ref }}
+  group: r6-s5-05-whatsapp-source-master-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -4018,6 +4018,234 @@ jobs:
           ! grep -q "$BAD_TASK" .github/workflows/00-R6-SECTION5-04-WHATSAPP-ADAPTIVE-COMPRESSION-CALIBRATION.yml
           echo "S5.04 STATUS ONLY • CLEAN + R6 + TIKTOK + INTERVIEW + MAIN/LIVE PROTECTED"
 
+      - name: Apply S5.05 native source master repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d <<'S505_PATCH' | gzip -d > /tmp/s505-source-master-repair.patch
+          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
+          XcIadFn/3Naj3tH/AT9iuvnjSQAA
+          S505_PATCH
+          echo "bb6fa10ec9bc88c4fe480b80f47b7dbdaecadc73dff93972efee153f7d9ec726  /tmp/s505-source-master-repair.patch" | sha256sum -c -
+          python3 - /tmp/s505-source-master-repair.patch <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          patch = Path(sys.argv[1])
+          expected = [
+              "app/build.gradle.kts",
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt",
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt",
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS503WhatsAppEngine.kt",
+              "app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt",
+          ]
+          output = subprocess.check_output(
+              ["git", "apply", "--numstat", str(patch)],
+              text=True,
+          )
+          actual = [line.split("\t", 2)[2] for line in output.splitlines() if line]
+          assert actual == expected, actual
+          PY
+          git apply --check /tmp/s505-source-master-repair.patch
+          git apply /tmp/s505-source-master-repair.patch
+          echo "S5.05 APPLIED • TRUE CAMERA MASTER • NO CAPTURE LOOK • NEUTRAL WA COPY"
+
+      - name: S5.05 measured source repair acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          E3="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS503WhatsAppEngine.kt"
+          E4="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt"
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          M="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt"
+
+          sha256sum -c <<'SHA'
+          00cfa58da26bb1db8286806c0573b49dbcd363352406ef4f5eb282f8751cc07e  app/build.gradle.kts
+          741e8f3ddb5929aad07029a463c213346dbbb25916441f66d338cfa2249cae12  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+          6bd67469a05a66c7f8b26b5a522b1035dc680310b81ac383155df5fcee7a76cc  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt
+          7b11c3cc13dfc8f2e4ee1d923523f23b429e28835a22bcfa300b5cffe823703b  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS503WhatsAppEngine.kt
+          e329d79265a6c0de340e11c4e27c045f4a0c4a6d23708afd8e5013616eef35c3  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaS504WhatsAppEngine.kt
+          SHA
+
+          python3 - "$E3" "$E4" "$C" "$M" app/build.gradle.kts <<'PY'
+          from pathlib import Path
+          import hashlib
+          import sys
+
+          engine3, engine4, camera, profiles, gradle = (
+              Path(path).read_text() for path in sys.argv[1:]
+          )
+
+          # Field evidence: both supplied files are the same 282-frame take
+          # with effectively identical audio, while the picture differs after
+          # a second encode. Both are only 720x1280 at about 23 Mbps. More
+          # bitrate cannot restore detail that the capture path never retained.
+          for token in (
+              'SOURCE_REPAIR_ID = "R6-S5.05-WHATSAPP-NATIVE-SOURCE-REPAIR"',
+              "CAPTURE_FHD_BITRATE_BPS = 24_000_000",
+              "Quality.FHD, Quality.HD, Quality.SD, Quality.UHD",
+              "): Media3Effect? = null",
+              "fun deliveryEffects(): List<Effect> = emptyList()",
+              "NATIVE ISP",
+              "S5.05 WA CLEAN",
+          ):
+              assert token in engine3, "S5.05 source token: " + token
+          assert engine3.count("useLiveEffect = false") == 3
+          assert "CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE" not in engine3
+          for forbidden in ("Contrast(", "Brightness(", "HslAdjustment.Builder()"):
+              assert forbidden not in engine3, "capture look survived: " + forbidden
+
+          isp = engine3[
+              engine3.index("    private fun <T : Any> applyIsp("):
+              engine3.index("    fun createEffect(")
+          ]
+          for forbidden in (
+              "CaptureRequest.EDGE_MODE",
+              "CaptureRequest.TONEMAP_MODE",
+              "CaptureRequest.COLOR_CORRECTION_MODE",
+              "CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE",
+              "CaptureRequest.NOISE_REDUCTION_MODE",
+          ):
+              assert forbidden not in isp, "forced ISP mode survived: " + forbidden
+          assert "CONTROL_AE_ANTIBANDING_MODE_AUTO" in isp
+
+          for token in (
+              'SOURCE_REPAIR_ID = "R6-S5.05-WHATSAPP-NEUTRAL-DELIVERY"',
+              "fun deliveryEffects(profile: DeliveryProfile): List<Effect> = emptyList()",
+              "DEFAULT_PROFILE_ID = \"B_720\"",
+              "FIELD_STANDARD_RETURN_WIDTH = 360",
+              "FIELD_STANDARD_RETURN_HEIGHT = 640",
+              "MAX_CALIBRATION_DURATION_SPREAD_MS = 250L",
+          ):
+              assert token in engine4, "S5.05 delivery token: " + token
+          for forbidden in ("Contrast(", "Brightness(", "HslAdjustment.Builder()"):
+              assert forbidden not in engine4, "delivery look survived: " + forbidden
+
+          for token in (
+              "SOURCE WARNING • $resolutionLabel BELOW FHD",
+              "clean source fell below requested FHD",
+              "S5.05 NATIVE SOURCE",
+              "S5.05 WA • NATIVE CLEAN MASTER • NEUTRAL DELIVERY",
+              "DevelopUgandaS503WhatsAppEngine.configureRecorder(",
+              "DevelopUgandaS503WhatsAppEngine.configureVideo(",
+              "DevelopUgandaS503WhatsAppEngine.createEffect(",
+              "DevelopUgandaS504WhatsAppEngine.deliveryEffects(",
+              "v255RestoreAutoFocus()",
+          ):
+              assert token in camera, "S5.05 camera token: " + token
+
+          start = profiles.index("    val status =")
+          end = profiles.index("    val interview =", start)
+          status = profiles[start:end]
+          for token in (
+              'instruction = "NATIVE CLEAN FHD MASTER + NEUTRAL STATUS / CHAT HD COPY"',
+              'qualityName = "CLEAN FHD • WA ADAPTIVE"',
+              "frameRate = 30",
+              "targetBitrateBps = DevelopUgandaS504WhatsAppEngine.DEFAULT_PROFILE_BITRATE_BPS",
+          ):
+              assert token in status, "S5.05 visible status profile: " + token
+
+          protected_sections = (
+              ("    val main =", "    val live =", "22f8e9739aaf8d864aa2110c05ab49608e0e895a83ae404af5c02e3e0cde9ecd"),
+              ("    val live =", "    val tikTok =", "19f53380c769a3ac12ae51a0d9d1b860e9d76a052d45c1a428b6db6a5c001ab7"),
+              ("    val tikTok =", "    val status =", "6549da459d930a68feef2cffa76bd08d4692e878a98aa800bd5c5c3fc7f77db7"),
+              ("    val interview =", "    private val navigatorOrder", "92f772224b0a2f9eeb0be28a9994154e6fd0120e7d96eeb0ee972bc5b9fd18b0"),
+          )
+          for first, last, expected in protected_sections:
+              section = profiles[
+                  profiles.index(first):profiles.index(last, profiles.index(first) + 1)
+              ]
+              assert hashlib.sha256(section.encode()).hexdigest() == expected, first
+
+          assert "versionCode = 28705" in gradle
+          assert 'versionName = "287.05-r6-section5-05-whatsapp-source-master-repair"' in gradle
+          print("S5.05 NATIVE SOURCE MASTER REPAIR • STATIC GATE PASS")
+          PY
+
+          sha256sum -c <<'SHA'
+          820c399cddfa990fba137f9966d9cafcedd1c02292f3009674b260364a32e822  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaAdditiveCameraModes.kt
+          0afa69ad77aaf93e16b68d629ebe65af3893c5e4c568db4580afbbbc3159b653  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaDirectorOverlayView.kt
+          b638ee7b6f179c0fc87a91270c5ccb73df61b7faf77e2a522f5eb512a42aeb29  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaDynamicBurnMonitor.kt
+          c58b5ec3987e1d229363b91f57874acd3c33c478d3ece810b72581e4a18a9625  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewAnnotatedExporter.kt
+          767f0e3724b731da17b26a29fabc78b781cd87e4d816d7541438272b96c89dd1  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewHudView.kt
+          8220bd0e2c56509bbb677205d709455ea6b006a8f624c0c59deb3cab852847d4  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewObservationEngine.kt
+          e5e1f0dbb314a540b2472e1bdd171bb55c2db0628b22e7ef8c344b6ba9fd053e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt
+          1ebc3cd0ed5270d8ce7a76323a88f9f006a7970313b097254e1260cace0031da  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt
+          c7a39f5e1d8afb7db86c54d30306dcac52dc7952f94f2692a2046feea994309e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods9DualOutputExporter.kt
+          4dba2231022031c309722d6fb7f72c4906ceda36a5f936b29e23e9bff1cf6c9e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt
+          699f3627673906f42deed2bcbdd96160da9764a52796e15869f27fb033b82f62  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaBroadcastCameraChrome.kt
+          747c9d1a3811e505fc8cf4babc10ef8ebbf38c218514d48dea37c2299101117e  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaColorEngine.kt
+          e966d02a9cdbe16e0444bf66b5679fa1ed174927a3b43a1f6a289fd32fc9018b  app/src/main/AndroidManifest.xml
+          98836221fe85307759fd7b3a6f64baebeed99929e61d9b1ec77d4aadfd4a55ff  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaV272FieldSoundContinuity.kt
+          3958ec3e9f9c813eefdd06277214c1bcfbe0d1076b6bd98acaacd6d57e4f96b7  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection4ProjectWorkflow.kt
+          21948c79dedca796f516415d47ca78f49a41bcc22c726108d3af614ab81d6626  app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaSection4ChronologicalWorkflow.kt
+          f2695b97610348aeb77bf4597b64ab7ec33e39031506fabc53320be103032457  ci/verify_source_contracts.py
+          SHA
+          ! grep -q 'DevelopUgandaS503WhatsAppEngine' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt
+          ! grep -q 'DevelopUgandaS503WhatsAppEngine' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt
+          ! grep -q 'DevelopUgandaS504WhatsAppEngine' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt
+          ! grep -q 'DevelopUgandaS504WhatsAppEngine' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt
+          python3 ci/verify_source_contracts.py
+          test "$(wc -c < .github/workflows/00-R6-SECTION5-04-WHATSAPP-ADAPTIVE-COMPRESSION-CALIBRATION.yml)" -lt 512000
+          BAD_TASK="connected""DebugAndroidTest"
+          ! grep -q "$BAD_TASK" .github/workflows/00-R6-SECTION5-04-WHATSAPP-ADAPTIVE-COMPRESSION-CALIBRATION.yml
+          echo "S5.05 SOURCE FIX ONLY • MAIN/LIVE/TIKTOK/INTERVIEW UNCHANGED"
+
       - name: Compile Kotlin first
         timeout-minutes: 12
         run: gradle --no-daemon --console=plain --max-workers=2 :app:compileDebugKotlin
@@ -4036,14 +4264,14 @@ jobs:
           set -euo pipefail
           SRC="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$SRC"
-          OUT="R6-S5-04A-WHATSAPP-FIELD-CALIBRATED-${{ github.run_number }}.apk"
+          OUT="R6-S5-05-WHATSAPP-SOURCE-MASTER-REPAIR-${{ github.run_number }}.apk"
           cp "$SRC" "$OUT"
           sha256sum "$OUT" > "$OUT.sha256"
           echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: R6-S5-04A-WHATSAPP-FIELD-CALIBRATED-${{ github.run_number }}
+          name: R6-S5-05-WHATSAPP-SOURCE-MASTER-REPAIR-${{ github.run_number }}
           path: |
             ${{ env.APK_NAME }}
             ${{ env.APK_NAME }}.sha256
