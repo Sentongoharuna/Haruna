@@ -1,0 +1,325 @@
+name: R6 SECTION5 03B - FIDELITY CAM REAL ENGINE FROM 02A
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/00-R6-SECTION5-03B-FIDELITY-CAM-REAL-ENGINE-FROM-02A.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r6-s5-03b-fidelity-from-02a-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore EXACT R6 SECTION5 02A base and nothing else
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=".github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml"
+          test -s "$BASE"
+          # Do not checksum the wrapper YAML itself: phone/GitHub upload can
+          # normalize line endings without changing the locked 02A recipe.
+          # The replay below requires the exact named 02A build steps and those
+          # steps contain their own source/patch hash gates.
+          python3 - "$BASE" <<'PY'
+          from pathlib import Path
+          import os, subprocess, sys
+
+          lines = Path(sys.argv[1]).read_text().splitlines()
+          scripts = {}
+          name = None
+          i = 0
+          while i < len(lines):
+              line = lines[i]
+              if line.startswith("      - name: "):
+                  name = line.split(": ", 1)[1]
+              if name and line == "        run: |":
+                  i += 1
+                  body = []
+                  while i < len(lines):
+                      x = lines[i]
+                      if not x.strip():
+                          body.append("")
+                          i += 1
+                          continue
+                      if not x.startswith("          "):
+                          break
+                      body.append(x[10:])
+                      i += 1
+                  scripts[name] = "\n".join(body) + "\n"
+                  continue
+              i += 1
+
+          recipe = (
+              "Restore exact accepted S5.01 forward baseline",
+              "Lock immediate S5.01 inputs",
+              "Apply S5.02 high fidelity report-only Interview upgrade",
+              "S5.02 exact output hashes",
+              "S5.02 high quality and Interview privacy acceptance gate",
+              "S5.02 truth safety gate",
+              "Prove S5.01 core and all other cameras unchanged",
+          )
+          missing = [x for x in recipe if x not in scripts]
+          if missing:
+              raise SystemExit("FIDELITY STOP: exact 02A recipe missing: " + ", ".join(missing))
+
+          env = os.environ.copy()
+          env.setdefault("GITHUB_RUN_NUMBER", "0")
+          for step in recipe:
+              print(f"::group::02A • {step}", flush=True)
+              subprocess.run(["bash"], input=scripts[step], text=True, check=True, env=env)
+              print("::endgroup::", flush=True)
+
+          print("EXACT R6 SECTION5 02A RESTORED • NO LATER WHATSAPP BUILD USED")
+          PY
+
+      - name: Freeze protected 02A engines before Fidelity replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewSignalGraphRenderer.kt \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt \
+            > /tmp/protected-02a.sha256
+
+      - name: Replace only fourth Status WhatsApp slot with real FIDELITY CAM
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p=Path("app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt")
+          c=Path("app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt")
+          i=Path("app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12Identity.kt")
+          ps=p.read_text(); cs=c.read_text(); ids=i.read_text()
+
+          a=ps.index("    val status = DevelopUgandaModeProfile(")
+          b=ps.index("\n    val interview = DevelopUgandaModeProfile(",a)
+          block=ps[a:b]
+          repl={
+            'displayName = "STATUS CAM"':'displayName = "FIDELITY CAM"',
+            'shortName = "STATUS"':'shortName = "FIDELITY"',
+            'routeDescription = "WhatsApp Status"':'routeDescription = "Fidelity Cam"',
+            'bestFor = "WHATSAPP STATUS"':'bestFor = "HIGH-FIDELITY SOCIAL DELIVERY"',
+            'instruction = "CLEAN MASTER + WHATSAPP STATUS COPY"':'instruction = "CLEAN MASTER + COMPRESSION-RESISTANT SOCIAL COPY"',
+            'qualityName = "SOCIAL FHD"':'qualityName = "FIDELITY FHD"',
+            'sceneName = "REPORTER"':'sceneName = "FIDELITY"',
+            'deliveryProfile = DevelopUgandaDeliveryProfile.WHATSAPP_STATUS':'deliveryProfile = DevelopUgandaDeliveryProfile.FIDELITY_SOCIAL',
+            'targetBitrateBps = 7_000_000':'targetBitrateBps = 24_000_000',
+            '"SEGMENT", "SEGMENT", "SET STATUS SEGMENT"':'"DETAIL", "DETAIL", "PRESERVE FINE DETAIL"',
+            '"RECORD", "RECORD", "START STATUS TAKE"':'"RECORD", "RECORD", "START FIDELITY TAKE"',
+            '"SHARE", "SHARE", "OPEN SHARE STEP"':'"SHARE", "SHARE", "OPEN SOCIAL DELIVERY"',
+          }
+          for old,new in repl.items():
+              assert block.count(old)==1, "profile anchor: "+old
+              block=block.replace(old,new,1)
+          ps=ps[:a]+block+ps[b:]
+          anchor="    WHATSAPP_STATUS,\n    INTERVIEW_DUAL"
+          assert ps.count(anchor)==1
+          ps=ps.replace(anchor,"    WHATSAPP_STATUS,\n    FIDELITY_SOCIAL,\n    INTERVIEW_DUAL",1)
+          p.write_text(ps)
+
+          old="DevelopUgandaDeliveryProfile.TIKTOK_UPLOAD,\n                    DevelopUgandaDeliveryProfile.WHATSAPP_STATUS"
+          new="DevelopUgandaDeliveryProfile.TIKTOK_UPLOAD,\n                    DevelopUgandaDeliveryProfile.FIDELITY_SOCIAL"
+          assert cs.count(old)==1
+          cs=cs.replace(old,new,1)
+
+          old='''val isStatus =
+            request.profile.deliveryProfile ==
+                DevelopUgandaDeliveryProfile.WHATSAPP_STATUS
+        val friendlyName = if (isStatus) "STATUS" else "TIKTOK"
+        val outputFolder =
+            if (isStatus) "Movies/develop.uganda/Status Ready" else "Movies/develop.uganda/TikTok Ready"
+        val outputPrefix =
+            if (isStatus) "DEVELOP_UGANDA_STATUS_READY" else "DEVELOP_UGANDA_TIKTOK_READY"
+        val audioBitrate = if (isStatus) 128_000 else 192_000'''
+          new='''val isFidelity =
+            request.profile.deliveryProfile ==
+                DevelopUgandaDeliveryProfile.FIDELITY_SOCIAL
+        val friendlyName = if (isFidelity) "FIDELITY" else "TIKTOK"
+        val outputFolder =
+            if (isFidelity) "Movies/develop.uganda/Fidelity Ready" else "Movies/develop.uganda/TikTok Ready"
+        val outputPrefix =
+            if (isFidelity) "DEVELOP_UGANDA_FIDELITY_READY" else "DEVELOP_UGANDA_TIKTOK_READY"
+        val audioBitrate = 192_000'''
+          assert cs.count(old)==1
+          cs=cs.replace(old,new,1)
+          old='''if (isStatus) {
+                                    offerWhatsAppStatusShare(deliveryUri)
+                                }'''
+          new='''if (isFidelity) {
+                                    offerFidelityShare(deliveryUri)
+                                }'''
+          assert cs.count(old)==1
+          cs=cs.replace(old,new,1)
+
+          old='''private fun isStatusCamera(): Boolean =
+        additiveModeProfile()?.deliveryProfile ==
+            DevelopUgandaDeliveryProfile.WHATSAPP_STATUS'''
+          new='''private fun isStatusCamera(): Boolean = false
+
+    private fun isFidelityCamera(): Boolean =
+        additiveModeProfile()?.deliveryProfile ==
+            DevelopUgandaDeliveryProfile.FIDELITY_SOCIAL'''
+          assert cs.count(old)==1
+          cs=cs.replace(old,new,1)
+
+          fs=cs.index("    private fun offerWhatsAppStatusShare(uri: Uri) {")
+          fe=cs.index("\n    private fun verifyAutomaticSocialMaster(",fs)
+          funtext='''    private fun offerFidelityShare(uri: Uri) {
+        AlertDialog.Builder(this)
+            .setTitle("FIDELITY COPY READY")
+            .setMessage("Share the separate compression-resistant Fidelity copy. Your clean original remains in the gallery.")
+            .setNegativeButton("LATER", null)
+            .setPositiveButton("SHARE") { _, _ ->
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "video/mp4"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(share, "Share Fidelity video"))
+            }
+            .show()
+    }
+'''
+          cs=cs[:fs]+funtext+cs[fe:]
+          c.write_text(cs)
+
+          assert ids.count('"STAT",')==1 and ids.count('"CHAT",')==1
+          ids=ids.replace('"STAT",','"FID",',1).replace('"CHAT",','"FID",',1)
+          old='(identity.page == DevelopUgandaCameraPage.STATUS && upper.contains("WHATSAPP"))'
+          assert ids.count(old)==1
+          ids=ids.replace(old,'(identity.page == DevelopUgandaCameraPage.STATUS && (upper.contains("FIDELITY") || upper.contains("STATUS")))',1)
+          i.write_text(ids)
+          print("FIDELITY ROUTE APPLIED")
+          PY
+
+      - name: Install DU Fidelity Engine policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFidelityCameraEngine.kt <<'KT'
+          package com.sentongoharuna.pulse
+
+          import androidx.camera.video.Quality
+
+          /**
+           * R6 S5.03 DU Fidelity Engine.
+           *
+           * Replaces the former WhatsApp-facing intent only.  The engine records
+           * a strong clean master first; platform compression is treated as a
+           * delivery problem, not as the capture target.
+           *
+           * No Main, Live, TikTok or Interview policy is defined here.
+           */
+          object DevelopUgandaFidelityCameraEngine {
+              const val ENGINE_ID = "R6-S5.03-DU-FIDELITY"
+              const val DISPLAY_NAME = "FIDELITY CAM"
+              const val TARGET_FPS = 30
+
+              // High-quality master targets. Device capability still wins.
+              fun qualityOrder(): List<Quality> =
+                  listOf(Quality.UHD, Quality.FHD, Quality.HD, Quality.SD)
+
+              fun bitrateFor(quality: Quality): Int = when (quality) {
+                  Quality.UHD -> 48_000_000
+                  Quality.FHD -> 24_000_000
+                  Quality.HD -> 14_000_000
+                  else -> 8_000_000
+              }
+
+              // Delivery principles derived from the approved reference set:
+              // low noise, retained micro-detail, restrained edge enhancement,
+              // protected highlights, stable 30 fps and a strong master.
+              const val DENOISE_POLICY = "DETAIL_PRESERVING"
+              const val EDGE_POLICY = "RESTRAINED_NO_HALO"
+              const val HIGHLIGHT_POLICY = "PROTECT"
+              const val MICRO_CONTRAST_POLICY = "CONTROLLED"
+              const val SKIN_POLICY = "PROTECT"
+          }
+          KT
+
+      - name: Fidelity real-engine acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt"
+          C="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt"
+          I="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFivemods12Identity.kt"
+          E="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFidelityCameraEngine.kt"
+          grep -q 'FIDELITY_SOCIAL' "$P"
+          grep -q 'displayName = "FIDELITY CAM"' "$P"
+          grep -q 'targetBitrateBps = 24_000_000' "$P"
+          grep -q 'DevelopUgandaDeliveryProfile.FIDELITY_SOCIAL' "$C"
+          grep -q 'private fun isStatusCamera(): Boolean = false' "$C"
+          grep -q 'FIDELITY COPY READY' "$C"
+          grep -q 'DEVELOP_UGANDA_FIDELITY_READY' "$C"
+          grep -q '"FID",' "$I"
+          grep -q 'ENGINE_ID = "R6-S5.03-DU-FIDELITY"' "$E"
+          ! grep -q 'setPackage("com.whatsapp")' "$C"
+          ! grep -q 'offerWhatsAppStatusShare(' "$C"
+          echo "FIDELITY REAL ENGINE • NO WHATSAPP ROUTE • PASS"
+
+      - name: Prove Main Live TikTok Interview engines remain exact 02A
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c /tmp/protected-02a.sha256
+          grep -q 'ENGINE_ID = "R6-S5.02-HIGH-FIDELITY-INTERVIEW-EVIDENCE"' \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt
+          echo "MAIN/LIVE ROUTING + TIKTOK + INTERVIEW + TRUE R6 NAVIGATOR PROTECTED"
+
+      - name: Compile Kotlin first
+        timeout-minutes: 12
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:compileDebugKotlin
+
+      - name: Prove API23 manifest without emulator
+        timeout-minutes: 8
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:processDebugMainManifest
+
+      - name: Unit tests and APK build
+        timeout-minutes: 20
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare Fidelity APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="R6-S5-03B-FIDELITY-CAM-REAL-ENGINE-FROM-02A-${{ github.run_number }}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R6-S5-03B-FIDELITY-CAM-REAL-ENGINE-FROM-02A-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
