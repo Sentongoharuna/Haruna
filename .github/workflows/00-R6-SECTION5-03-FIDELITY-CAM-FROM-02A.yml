@@ -1,0 +1,263 @@
+name: R6 SECTION5 03 - FIDELITY CAM FROM 02A
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/00-R6-SECTION5-03-FIDELITY-CAM-FROM-02A.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r6-s5-03-fidelity-from-02a-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore EXACT R6 SECTION5 02A base and nothing else
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=".github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml"
+          test -s "$BASE"
+          echo "2e87b4c45256529c2eda72cc79e0c923e8cdb5fb  $BASE" | sha1sum -c -
+
+          python3 - "$BASE" <<'PY'
+          from pathlib import Path
+          import os, subprocess, sys
+
+          lines = Path(sys.argv[1]).read_text().splitlines()
+          scripts = {}
+          name = None
+          i = 0
+          while i < len(lines):
+              line = lines[i]
+              if line.startswith("      - name: "):
+                  name = line.split(": ", 1)[1]
+              if name and line == "        run: |":
+                  i += 1
+                  body = []
+                  while i < len(lines):
+                      x = lines[i]
+                      if not x.strip():
+                          body.append("")
+                          i += 1
+                          continue
+                      if not x.startswith("          "):
+                          break
+                      body.append(x[10:])
+                      i += 1
+                  scripts[name] = "\n".join(body) + "\n"
+                  continue
+              i += 1
+
+          recipe = (
+              "Restore exact accepted S5.01 forward baseline",
+              "Lock immediate S5.01 inputs",
+              "Apply S5.02 high fidelity report-only Interview upgrade",
+              "S5.02 exact output hashes",
+              "S5.02 high quality and Interview privacy acceptance gate",
+              "S5.02 truth safety gate",
+              "Prove S5.01 core and all other cameras unchanged",
+          )
+          missing = [x for x in recipe if x not in scripts]
+          if missing:
+              raise SystemExit("FIDELITY STOP: exact 02A recipe missing: " + ", ".join(missing))
+
+          env = os.environ.copy()
+          env.setdefault("GITHUB_RUN_NUMBER", "0")
+          for step in recipe:
+              print(f"::group::02A • {step}", flush=True)
+              subprocess.run(["bash"], input=scripts[step], text=True, check=True, env=env)
+              print("::endgroup::", flush=True)
+
+          print("EXACT R6 SECTION5 02A RESTORED • NO LATER WHATSAPP BUILD USED")
+          PY
+
+      - name: Freeze protected 02A engines before Fidelity replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewSignalGraphRenderer.kt \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaR60TikTokEngine.kt \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraModeNavigator.kt \
+            > /tmp/protected-02a.sha256
+
+      - name: Replace only WhatsApp Status identity with FIDELITY CAM
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt"
+
+          python3 - "$P" <<'PY'
+          from pathlib import Path
+          import sys
+
+          p = Path(sys.argv[1])
+          s = p.read_text()
+
+          start = s.index("    val status = DevelopUgandaModeProfile(")
+          end = s.index("\n    val interview = DevelopUgandaModeProfile(", start)
+          block = s[start:end]
+
+          replacements = {
+              'displayName = "STATUS CAM"': 'displayName = "FIDELITY CAM"',
+              'shortName = "STATUS"': 'shortName = "FIDELITY"',
+              'routeDescription = "WhatsApp Status"': 'routeDescription = "Fidelity Cam"',
+              'bestFor = "WHATSAPP STATUS"': 'bestFor = "HIGH-FIDELITY SOCIAL DELIVERY"',
+              'instruction = "CLEAN MASTER + WHATSAPP STATUS COPY"':
+                  'instruction = "CLEAN MASTER + COMPRESSION-RESISTANT SOCIAL COPY"',
+              'qualityName = "SOCIAL FHD"': 'qualityName = "FIDELITY FHD"',
+              'sceneName = "REPORTER"': 'sceneName = "FIDELITY"',
+              'frameRate = 30': 'frameRate = 30',
+              'targetBitrateBps = 7_000_000': 'targetBitrateBps = 24_000_000',
+              '"SEGMENT", "SEGMENT", "SET STATUS SEGMENT"':
+                  '"DETAIL", "DETAIL", "PRESERVE FINE DETAIL"',
+              '"RECORD", "RECORD", "START STATUS TAKE"':
+                  '"RECORD", "RECORD", "START FIDELITY TAKE"',
+              '"SHARE", "SHARE", "OPEN SHARE STEP"':
+                  '"SHARE", "SHARE", "OPEN SOCIAL DELIVERY"',
+          }
+          for old, new in replacements.items():
+              if old not in block:
+                  raise SystemExit("FIDELITY STOP: expected 02A Status token missing: " + old)
+              block = block.replace(old, new, 1)
+
+          s = s[:start] + block + s[end:]
+          p.write_text(s)
+          print("STATUS SLOT USER IDENTITY -> FIDELITY CAM")
+          PY
+
+      - name: Install DU Fidelity Engine policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFidelityCameraEngine.kt <<'KT'
+          package com.sentongoharuna.pulse
+
+          import androidx.camera.video.Quality
+
+          /**
+           * R6 S5.03 DU Fidelity Engine.
+           *
+           * Replaces the former WhatsApp-facing intent only.  The engine records
+           * a strong clean master first; platform compression is treated as a
+           * delivery problem, not as the capture target.
+           *
+           * No Main, Live, TikTok or Interview policy is defined here.
+           */
+          object DevelopUgandaFidelityCameraEngine {
+              const val ENGINE_ID = "R6-S5.03-DU-FIDELITY"
+              const val DISPLAY_NAME = "FIDELITY CAM"
+              const val TARGET_FPS = 30
+
+              // High-quality master targets. Device capability still wins.
+              fun qualityOrder(): List<Quality> =
+                  listOf(Quality.UHD, Quality.FHD, Quality.HD, Quality.SD)
+
+              fun bitrateFor(quality: Quality): Int = when (quality) {
+                  Quality.UHD -> 48_000_000
+                  Quality.FHD -> 24_000_000
+                  Quality.HD -> 14_000_000
+                  else -> 8_000_000
+              }
+
+              // Delivery principles derived from the approved reference set:
+              // low noise, retained micro-detail, restrained edge enhancement,
+              // protected highlights, stable 30 fps and a strong master.
+              const val DENOISE_POLICY = "DETAIL_PRESERVING"
+              const val EDGE_POLICY = "RESTRAINED_NO_HALO"
+              const val HIGHLIGHT_POLICY = "PROTECT"
+              const val MICRO_CONTRAST_POLICY = "CONTROLLED"
+              const val SKIN_POLICY = "PROTECT"
+          }
+          KT
+
+      - name: Fidelity identity acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaModeProfiles.kt"
+          E="app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaFidelityCameraEngine.kt"
+
+          grep -q 'displayName = "FIDELITY CAM"' "$P"
+          grep -q 'shortName = "FIDELITY"' "$P"
+          grep -q 'qualityName = "FIDELITY FHD"' "$P"
+          grep -q 'targetBitrateBps = 24_000_000' "$P"
+          grep -q 'ENGINE_ID = "R6-S5.03-DU-FIDELITY"' "$E"
+          grep -q 'Quality.UHD -> 48_000_000' "$E"
+          grep -q 'Quality.FHD -> 24_000_000' "$E"
+
+          # No WhatsApp wording may remain in the user-facing Status/Fidelity profile block.
+          python3 - "$P" <<'PY'
+          from pathlib import Path
+          import sys
+          s = Path(sys.argv[1]).read_text()
+          a = s.index("    val status = DevelopUgandaModeProfile(")
+          b = s.index("\n    val interview = DevelopUgandaModeProfile(", a)
+          block = s[a:b].upper()
+          assert "WHATSAPP" not in block
+          assert "FIDELITY CAM" in block
+          assert "FIDELITY" in block
+          print("FIDELITY USER IDENTITY • PASS")
+          PY
+
+      - name: Prove Main Live TikTok Interview engines remain exact 02A
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c /tmp/protected-02a.sha256
+          grep -q 'ENGINE_ID = "R6-S5.02-HIGH-FIDELITY-INTERVIEW-EVIDENCE"' \
+            app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaInterviewCameraEngine.kt
+          echo "MAIN/LIVE ROUTING + TIKTOK + INTERVIEW + TRUE R6 NAVIGATOR PROTECTED"
+
+      - name: Compile Kotlin first
+        timeout-minutes: 12
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:compileDebugKotlin
+
+      - name: Prove API23 manifest without emulator
+        timeout-minutes: 8
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:processDebugMainManifest
+
+      - name: Unit tests and APK build
+        timeout-minutes: 20
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare Fidelity APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$SRC"
+          OUT="R6-S5-03-FIDELITY-CAM-FROM-02A-${{ github.run_number }}.apk"
+          cp "$SRC" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R6-S5-03-FIDELITY-CAM-FROM-02A-${{ github.run_number }}
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          if-no-files-found: error
+          retention-days: 14
