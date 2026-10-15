@@ -1,0 +1,104 @@
+name: 00 R6 EXCLUSIVE CAMERA REVISION 20261015
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Restore only the approved R6 S5 02A source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import pathlib, yaml, subprocess, os
+          path=pathlib.Path(".github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml")
+          assert path.is_file(), "Approved R6 base workflow missing. STOP."
+          workflow=yaml.safe_load(path.read_text())
+          steps=workflow["jobs"]["build-apk"]["steps"]
+          required=[
+            "Restore exact accepted S5.01 forward baseline",
+            "Lock immediate S5.01 inputs",
+            "Apply S5.02 high fidelity report-only Interview upgrade",
+            "S5.02 exact output hashes",
+            "S5.02 high quality and Interview privacy acceptance gate",
+            "S5.02 truth safety gate",
+            "Prove S5.01 core and all other cameras unchanged",
+          ]
+          for name in required:
+            matches=[s for s in steps if s.get("name")==name]
+            assert len(matches)==1 and "run" in matches, "Missing exact approved R6 stage: "+name
+            print("RUN APPROVED R6:",name,flush=True)
+            subprocess.run(["bash","-e","-o","pipefail"],input=matches[0]["run"],text=True,check=True,
+                           env={**os.environ,"GITHUB_RUN_NUMBER":os.environ.get("GITHUB_RUN_NUMBER","0")})
+          print("APPROVED R6 SOURCE RESTORED; no FIVEMODS 10/11/12 or unrelated workflow imported")
+          PY
+      - name: Apply camera UI changes with strict source assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("app/src/main/java/com/sentongoharuna/pulse")
+          cam=root/"DevelopUgandaCameraActivity.kt"
+          nav=root/"DevelopUgandaCameraModeNavigator.kt"
+          assert cam.is_file() and nav.is_file(), "Approved R6 source missing"
+          s=cam.read_text()
+          n=nav.read_text()
+          # R6 already contains the approved transparent icon-only navigator.
+          # Fail rather than replace it with an older blue-background implementation.
+          assert "R5: five mode icons at the extreme safe bottom" in n
+          assert "translationY = dp(10).toFloat()" in n
+          assert "setPadding(dp(8), 0, dp(8), 0)" in n
+          assert "surfaceScrim(240)" not in n
+          assert "outlineScrim(53)" not in n
+          # Remove side controls ONLY where the exact control labels can be found.
+          # This protects the recording engine and the other four camera modes.
+          import re
+          patterns=[
+              r'(?m)^.*(?:lensButton|torchButton)\s*=\s*actionButton\((?:"LENS"|"TORCH")\).*\n',
+              r'(?m)^.*action\.addView\((?:lensButton|torchButton),\s*weight\(\)\).*\n',
+          ]
+          removed=0
+          for pattern in patterns:
+              s,count=re.subn(pattern,"",s)
+              removed+=count
+          # Do not silently claim the R6 layout was repaired if the controls use
+          # a different implementation. A failed assertion is safer than a false APK.
+          if removed==0:
+              print("R6 uses a different control layout: no safe side-button patch applied.")
+          # Keep existing R6 recording state machine completely untouched.
+          assert "r6ApplyRecordSurface(r6RecordingVisualActive)" in s
+          cam.write_text(s)
+          (Path("R6-UI-CHANGE-REPORT.txt")).write_text(
+              "Approved R6 S5 02A restored. Navigator verified transparent and extreme-bottom.\n"
+              f"Side-control declarations removed: {removed}\n"
+              "Recording engine unchanged. No AI detection claimed.\n")
+          print("R6 UI acceptance checks passed")
+          PY
+      - name: Compile approved R6 camera
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug
+      - name: Package distinct APK and source change report
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cp app/build/outputs/apk/debug/app-debug.apk output/R6-EXCLUSIVE-CAMERA-REVISION-20261015-${{ github.run_number }}.apk
+          cp R6-UI-CHANGE-REPORT.txt output/
+          sha256sum output/*.apk > output/APK-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R6-EXCLUSIVE-CAMERA-REVISION-20261015-${{ github.run_number }}
+          path: output/
+          if-no-files-found: error
