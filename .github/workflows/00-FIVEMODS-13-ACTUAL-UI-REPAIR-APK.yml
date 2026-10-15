@@ -1,0 +1,49 @@
+name: FIVEMODS 13 - Actual Camera UI Repair APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch actual Android camera UI and assert changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnA9UGF0aCgnYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL01haW5BY3Rpdml0eS5rdCcpCnM9cC5yZWFkX3RleHQoKQpkZWYgY2hhbmdlKG9sZCxuZXcsbGFiZWwpOgogZ2xvYmFsIHMKIGlmIG9sZCBub3QgaW4gczogcmFpc2UgUnVudGltZUVycm9yKGYnTUlTU0lORyB7bGFiZWx9OyByZWZ1c2luZyB1bmNoYW5nZWQgYnVpbGQnKQogcz1zLnJlcGxhY2Uob2xkLG5ldywxKQpjaGFuZ2UoJ3NldEJhY2tncm91bmRDb2xvcihEZXZlbG9wVWdhbmRhRml2ZW1vZHM4VGhlbWUuc3VyZmFjZVNjcmltKDIyNCkpJywnc2V0QmFja2dyb3VuZENvbG9yKGFuZHJvaWQuZ3JhcGhpY3MuQ29sb3IuVFJBTlNQQVJFTlQpJywndHJhbnNwYXJlbnQgYm90dG9tJykKY2hhbmdlKCdzZXRQYWRkaW5nKGRwKDgpLCBkcCg0KSwgZHAoOCksIGRwKDEwKSknLCdzZXRQYWRkaW5nKGRwKDgpLCBkcCgwKSwgZHAoOCksIGRwKDApKScsJ2JvdHRvbSBwYWRkaW5nJykKY2hhbmdlKCcnJyAgICAgICAgYWN0aW9uLmFkZFZpZXcobGVuc0J1dHRvbiwgd2VpZ2h0KCkpCiAgICAgICAgYWN0aW9uLmFkZFZpZXcodG9yY2hCdXR0b24sIHdlaWdodCgpKQogICAgICAgIGFjdGlvbi5hZGRWaWV3KGxpdmVCdXR0b24sIHdlaWdodCgpKQogICAgICAgIGFjdGlvbi5hZGRWaWV3KGVkaXRCdXR0b24sIHdlaWdodCgpKQogICAgICAgIGFjdGlvbi5hZGRWaWV3KHJlY29yZEJ1dHRvbiwgd2VpZ2h0KCkpJycnLCcnJyAgICAgICAgLy8gU2luZ2xlIGNlbnRlcmVkIFJFQ09SRCBidXR0b247IG5vIGZsYW5raW5nIGNvbnRyb2xzLgogICAgICAgIGFjdGlvbi5ncmF2aXR5ID0gR3Jhdml0eS5DRU5URVIKICAgICAgICBhY3Rpb24uYWRkVmlldyhyZWNvcmRCdXR0b24sIExpbmVhckxheW91dC5MYXlvdXRQYXJhbXMoZHAoMTEyKSwgZHAoNjQpKSknJycsJ3JlY29yZCByb3cnKQpjaGFuZ2UoJ3JlY29yZEJ1dHRvbi5zZXRPbkNsaWNrTGlzdGVuZXIgeyB0b2dnbGVSZWNvcmRpbmcoKSB9JywnJydyZWNvcmRCdXR0b24uc2V0T25DbGlja0xpc3RlbmVyIHsgYnV0dG9uIC0+CiAgICAgICAgICAgIGlmICghYnV0dG9uLmlzRW5hYmxlZCkgcmV0dXJuQHNldE9uQ2xpY2tMaXN0ZW5lcgogICAgICAgICAgICBidXR0b24uaXNFbmFibGVkID0gZmFsc2UKICAgICAgICAgICAgdHJ5IHsgdG9nZ2xlUmVjb3JkaW5nKCkgfSBmaW5hbGx5IHsKICAgICAgICAgICAgICAgIGJ1dHRvbi5wb3N0RGVsYXllZCh7IGJ1dHRvbi5pc0VuYWJsZWQgPSB0cnVlIH0sIDY1MEwpCiAgICAgICAgICAgIH0KICAgICAgICB9JycnLCdyZWNvcmQgdGFwIGd1YXJkJykKcC53cml0ZV90ZXh0KHMpCmNocm9tZT1QYXRoKCdhcHAvc3JjL21haW4vamF2YS9jb20vc2VudG9uZ29oYXJ1bmEvcHVsc2UvRGV2ZWxvcFVnYW5kYUJyb2FkY2FzdENhbWVyYUNocm9tZS5rdCcpCmlmIGNocm9tZS5leGlzdHMoKToKIHQ9Y2hyb21lLnJlYWRfdGV4dCgpCiBuZWVkbGU9JycnICAgICAgICAgICAgcm9vdC5hZGRWaWV3KGNvbnRyb2xSYWlsKQogICAgICAgICAgICBwbGFjZVJhaWwoKScnJwogaWYgbmVlZGxlIG5vdCBpbiB0OiByYWlzZSBSdW50aW1lRXJyb3IoJ3NpZGUgcmFpbCBzb3VyY2UgY2hhbmdlZCcpCiBjaHJvbWUud3JpdGVfdGV4dCh0LnJlcGxhY2UobmVlZGxlLCcnJyAgICAgICAgICAgIGNvbnRyb2xSYWlsLnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICAgICAgcm9vdC5hZGRWaWV3KGNvbnRyb2xSYWlsKQogICAgICAgICAgICBwbGFjZVJhaWwoKScnJywxKSkKcHJpbnQoJ0FwcGxpZWQgS290bGluIFVJIGVkaXRzJykK' | base64 -d > /tmp/patch_ui.py
+          python3 /tmp/patch_ui.py
+          git diff --check
+          git diff -- app/src/main/java/com/sentongoharuna/pulse/MainActivity.kt > /tmp/ui-diff.patch
+          test -s /tmp/ui-diff.patch
+          grep -q 'Color.TRANSPARENT' app/src/main/java/com/sentongoharuna/pulse/MainActivity.kt
+          grep -q 'action.addView(recordButton, LinearLayout.LayoutParams(dp(112), dp(64)))' app/src/main/java/com/sentongoharuna/pulse/MainActivity.kt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Verify source contracts
+        run: python3 ci/verify_source_contracts.py
+      - name: Build and unit test
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Upload UI diff for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIVEMODS-13-ACTUAL-UI-CHANGES
+          path: /tmp/ui-diff.patch
+          if-no-files-found: warn
+      - name: Upload compiled APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIVEMODS-13-RECORD-ONLY-TRANSPARENT-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
