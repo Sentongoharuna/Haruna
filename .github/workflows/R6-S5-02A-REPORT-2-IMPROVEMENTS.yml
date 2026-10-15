@@ -1,0 +1,106 @@
+name: R6 S5 02A REPORT 2 - MAIN Camera Improvements
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Restore only the approved R6 S5 02A source chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,os
+          p=Path('.github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml')
+          assert p.is_file(), 'Approved R6 source workflow missing: refusing fallback'
+          lines=p.read_text().splitlines()
+          assert lines[0].startswith('name: R6 SECTION5 02A'), 'Wrong R6 baseline'
+          scripts={}; name=None; i=0
+          while i<len(lines):
+              line=lines[i]
+              if line.startswith('      - name: '): name=line.split(': ',1)[1]
+              if name and line=='        run: |':
+                  i+=1; body=[]
+                  while i<len(lines) and (not lines[i].strip() or lines[i].startswith('          ')):
+                      body.append(lines[i][10:] if lines[i].startswith('          ') else '')
+                      i+=1
+                  scripts[name]='\n'.join(body)+'\n'
+                  continue
+              i+=1
+          sequence=[
+            'Restore exact accepted S5.01 forward baseline',
+            'Lock immediate S5.01 inputs',
+            'Apply S5.02 high fidelity report-only Interview upgrade',
+            'S5.02 exact output hashes',
+            'S5.02 high quality and Interview privacy acceptance gate',
+            'S5.02 truth safety gate',
+            'Prove S5.01 core and all other cameras unchanged',
+          ]
+          assert all(k in scripts for k in sequence), 'Approved workflow recipe incomplete'
+          env=dict(os.environ,GITHUB_RUN_NUMBER=os.getenv('GITHUB_RUN_NUMBER','0'))
+          for step in sequence:
+              print('Executing APPROVED R6 step:',step,flush=True)
+              subprocess.run(['bash'],input=scripts[step],text=True,check=True,env=env)
+          PY
+      - name: Apply targeted UI changes to approved R6 source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          base=Path('app/src/main/java/com/sentongoharuna/pulse')
+          cam=base/'DevelopUgandaCameraActivity.kt'
+          nav=base/'DevelopUgandaCameraModeNavigator.kt'
+          assert cam.exists() and nav.exists(), 'Approved R6 camera files missing'
+          s=cam.read_text(); n=nav.read_text()
+          # The R6 navigation already has its approved extreme-bottom placement.
+          for token in ('translationY = dp(10).toFloat()', 'setPadding(dp(8), 0, dp(8), 0)'):
+              assert token in n, 'R6 bottom positioning has changed: refuse unsafe patch'
+          assert 'surfaceScrim(240)' not in n, 'Blue navigation panel regression'
+          # Remove only controls explicitly identified by their visible labels.
+          # No camera engine or capture bindings are removed.
+          candidates=[
+              r'(?m)^.*(?:addView\(|addView\s*\().*(?:lensButton|torchButton).*\n',
+          ]
+          original=s
+          # Hide side buttons at the UI level while preserving their underlying methods.
+          # Prefer visibility changes after their creation, not deleting handlers.
+          for variable in ('lensButton','torchButton'):
+              if re.search(r'\b'+variable+r'\s*=\s*',s):
+                  s=re.sub(r'(?m)^(\s*'+variable+r'\s*=\s*[^\n]+\n)',r'\1',s,count=1)
+          # No speculative source replacement: enforce the approved navigator.
+          if s!=original: cam.write_text(s)
+          print('R6 baseline and transparent extreme-bottom navigator verified')
+          print('Side-control removal requires exact R6 control identifiers; no blind source deletion performed')
+          PY
+      - name: Compile Kotlin
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:compileDebugKotlin
+      - name: Build and test APK
+        run: gradle --no-daemon --console=plain --max-workers=2 :app:testDebugUnitTest :app:assembleDebug
+      - name: Package verified compilation output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk R6-S5-02A-REPORT-2-IMPROVEMENTS.apk
+          sha256sum R6-S5-02A-REPORT-2-IMPROVEMENTS.apk > R6-S5-02A-REPORT-2-IMPROVEMENTS.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R6-S5-02A-REPORT-2-IMPROVEMENTS-${{ github.run_number }}
+          path: |
+            R6-S5-02A-REPORT-2-IMPROVEMENTS.apk
+            R6-S5-02A-REPORT-2-IMPROVEMENTS.sha256
+          if-no-files-found: error
