@@ -1,0 +1,81 @@
+name: R6 Original APK Inspection
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'base_parts/**'
+      - '.github/workflows/r6-inspect.yml'
+permissions:
+  contents: read
+jobs:
+  inspect-original-r6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reassemble ORIGINAL R6 APK and verify SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking original R6 parts in repository..."
+          if [ ! -d base_parts ]; then
+            echo "::error::Missing base_parts directory. Upload the six original R6 APK parts to base_parts/ in this repository."
+            exit 1
+          fi
+          missing=0
+          for i in 00 01 02 03 04 05; do
+            if [ ! -s "base_parts/part_$i" ]; then
+              echo "::error::Missing or empty base_parts/part_$i"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Upload all six files to base_parts/ then rerun."
+            exit 1
+          fi
+          test -s APK_SHA256.txt || { echo "::error::Upload APK_SHA256.txt to repository root"; exit 1; }
+          cat base_parts/part_00 base_parts/part_01 base_parts/part_02 base_parts/part_03 base_parts/part_04 base_parts/part_05 > original-r6.apk
+          echo "$(cat APK_SHA256.txt)  original-r6.apk" | sha256sum -c -
+      - name: Install APK analysis tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apktool unzip jq
+          curl -fsSL https://api.github.com/repos/skylot/jadx/releases/latest > jadx-release.json
+          URL=$(jq -r '.assets[] | select(.name | endswith(".zip")) | .browser_download_url' jadx-release.json | head -1)
+          test -n "$URL"
+          curl -fL "$URL" -o jadx.zip
+          mkdir jadx && unzip -q jadx.zip -d jadx
+      - name: Decode R6 resources and Java code
+        shell: bash
+        run: |
+          mkdir -p report
+          unzip -l original-r6.apk > report/apk-file-list.txt
+          apktool d -f -s original-r6.apk -o decoded-resources > report/apktool.log 2>&1 || true
+          jadx/bin/jadx --no-debug-info --threads-count 4 -d decompiled-r6 original-r6.apk > report/jadx.log 2>&1 || true
+          cp decoded-resources/AndroidManifest.xml report/AndroidManifest.xml 2>/dev/null || true
+          grep -RinE 'MAIN|LIVE|TIKTOK|STATUS|INTERVIEW|CameraX|Camera2|MediaRecorder|MediaCodec|record' decoded-resources/res decompiled-r6/sources 2>/dev/null | head -n 1200 > report/camera-navigation-search.txt || true
+          find decompiled-r6/sources -type f | sort > report/java-source-files.txt || true
+          sha256sum original-r6.apk > report/original-sha256.txt
+          cat > report/IMPROVEMENT_PLAN.md <<'PLAN'
+          # R6 inspection and suggested changes — NOT IMPLEMENTED
+          - Preserve five modes MAIN, LIVE, TIKTOK, STATUS, INTERVIEW and their exact navigation.
+          - Preserve original R6 recording pipeline, codecs, output paths and recording reliability.
+          - Remove only unwanted controls from the specific camera control row after locating their resource IDs.
+          - Remove blue icon background drawables only; retain icon graphics and positions.
+          - Add MAIN AI functions behind capability checks, with real frame processing and no blocking of recording.
+          - Change app label and package identity only after mapping manifest, providers and file authorities.
+          - Before shipping, test all five modes, recording, switching, orientation, microphone, saving, and output quality on a real phone.
+          - Decompiled APK code is for inspection, NOT a verified rebuildable original source project.
+          PLAN
+      - name: Publish inspection reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: R6-ORIGINAL-INSPECTION-REPORT
+          path: report/
+          retention-days: 14
+      - name: Publish decoded resources for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: R6-DECODED-RESOURCES
+          path: decoded-resources/
+          retention-days: 7
