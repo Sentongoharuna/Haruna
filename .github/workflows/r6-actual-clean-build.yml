@@ -1,0 +1,43 @@
+name: R6 Actual Clean UI APK Build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original R6 engine APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in 00 01 02 03 04 05; do test -s "base_parts/part_$i" || { echo "Missing base_parts/part_$i"; exit 1; }; done
+          cat base_parts/part_0{0..5} > original-r6.apk
+          sha256sum -c <(awk '{print $1 "  original-r6.apk"}' APK_SHA256.txt)
+      - name: Install Android APK tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apktool apksigner zipalign
+      - name: Decode original resources and preserve DEX
+        run: apktool d -f original-r6.apk -o decoded
+      - name: Patch UI controls (fail rather than fake changes)
+        run: python3 tools/patch.py decoded
+      - name: Rebuild modified APK
+        run: apktool b decoded -o unsigned.apk
+      - name: Align and sign modified APK
+        run: |
+          zipalign -f -p 4 unsigned.apk aligned.apk
+          keytool -genkeypair -keystore r6-release.jks -storepass android -keypass android -alias r6 -keyalg RSA -keysize 3072 -validity 10000 -dname "CN=R6 Local Build" -noprompt
+          apksigner sign --ks r6-release.jks --ks-key-alias r6 --ks-pass pass:android --key-pass pass:android --out R6-CLEAN-UI.apk aligned.apk
+          apksigner verify --verbose R6-CLEAN-UI.apk
+      - name: Publish APK and actual changes report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R6-CLEAN-UI-RESULT
+          path: |
+            R6-CLEAN-UI.apk
+            r6-patch-report.json
+          if-no-files-found: warn
