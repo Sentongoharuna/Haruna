@@ -1,0 +1,40 @@
+name: 00 FIVEMODS 12 - Transparent Bottom and Record APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source and apply FIVEMODS 12 UI patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f app/src/main/java/com/sentongoharuna/pulse/MainActivity.kt
+          test -f ci/verify_source_contracts.py
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnA9UGF0aCgnYXBwL3NyYy9tYWluL2phdmEvY29tL3NlbnRvbmdvaGFydW5hL3B1bHNlL01haW5BY3Rpdml0eS5rdCcpCnM9cC5yZWFkX3RleHQoKQpvbGQ9JycnICAgICAgICAgICAgc2V0UGFkZGluZyhkcCg4KSwgZHAoNCksIGRwKDgpLCBkcCgxMCkpCiAgICAgICAgICAgIHNldEJhY2tncm91bmRDb2xvcihEZXZlbG9wVWdhbmRhRml2ZW1vZHM4VGhlbWUuc3VyZmFjZVNjcmltKDIyNCkpJycnCmFzc2VydCBvbGQgaW4gcywnQm90dG9tIGNvbnRyb2wgbGF5b3V0IGNoYW5nZWQ7IHN0b3AgcmF0aGVyIHRoYW4gc2lsZW50bHkgYnVpbGQgb2xkIFVJJwpzPXMucmVwbGFjZShvbGQsJycnICAgICAgICAgICAgc2V0UGFkZGluZyhkcCg4KSwgZHAoMiksIGRwKDgpLCBkcCgwKSkKICAgICAgICAgICAgc2V0QmFja2dyb3VuZENvbG9yKGFuZHJvaWQuZ3JhcGhpY3MuQ29sb3IuVFJBTlNQQVJFTlQpJycnLDEpCm9sZD0nJycgICAgICAgIGFjdGlvbi5hZGRWaWV3KGxlbnNCdXR0b24sIHdlaWdodCgpKQogICAgICAgIGFjdGlvbi5hZGRWaWV3KHRvcmNoQnV0dG9uLCB3ZWlnaHQoKSkKICAgICAgICBhY3Rpb24uYWRkVmlldyhsaXZlQnV0dG9uLCB3ZWlnaHQoKSkKICAgICAgICBhY3Rpb24uYWRkVmlldyhlZGl0QnV0dG9uLCB3ZWlnaHQoKSkKICAgICAgICBhY3Rpb24uYWRkVmlldyhyZWNvcmRCdXR0b24sIHdlaWdodCgpKScnJwphc3NlcnQgb2xkIGluIHMsJ1JlY29yZCBjb250cm9sIGxheW91dCBjaGFuZ2VkJwpzPXMucmVwbGFjZShvbGQsJycnICAgICAgICAvLyBGSVZFTU9EUyAxMjogUkVDT1JEIGlzIHRoZSBvbmx5IGNvbnRyb2wgaW4gdGhpcyBhY3Rpb24gcm93LgogICAgICAgIC8vIEV4aXN0aW5nIGxlbnMvdG9yY2gvbGl2ZS9lZGl0IG9iamVjdHMgYW5kIGhhbmRsZXJzIGFyZSByZXRhaW5lZC4KICAgICAgICBhY3Rpb24uZ3Jhdml0eSA9IEdyYXZpdHkuQ0VOVEVSCiAgICAgICAgYWN0aW9uLmFkZFZpZXcocmVjb3JkQnV0dG9uLCBMaW5lYXJMYXlvdXQuTGF5b3V0UGFyYW1zKGRwKDExMiksIGRwKDY0KSkpJycnLDEpCm9sZD0ncmVjb3JkQnV0dG9uLnNldE9uQ2xpY2tMaXN0ZW5lciB7IHRvZ2dsZVJlY29yZGluZygpIH0nCmFzc2VydCBvbGQgaW4gcwpzPXMucmVwbGFjZShvbGQsJycncmVjb3JkQnV0dG9uLnNldE9uQ2xpY2tMaXN0ZW5lciB7IGJ1dHRvbiAtPgogICAgICAgICAgICBpZiAoIWJ1dHRvbi5pc0VuYWJsZWQpIHJldHVybkBzZXRPbkNsaWNrTGlzdGVuZXIKICAgICAgICAgICAgYnV0dG9uLmlzRW5hYmxlZCA9IGZhbHNlCiAgICAgICAgICAgIHRvZ2dsZVJlY29yZGluZygpCiAgICAgICAgICAgIGJ1dHRvbi5wb3N0RGVsYXllZCh7IGJ1dHRvbi5pc0VuYWJsZWQgPSB0cnVlIH0sIDY1MEwpCiAgICAgICAgfScnJywxKQpwLndyaXRlX3RleHQocykKY2hyb21lPVBhdGgoJ2FwcC9zcmMvbWFpbi9qYXZhL2NvbS9zZW50b25nb2hhcnVuYS9wdWxzZS9EZXZlbG9wVWdhbmRhQnJvYWRjYXN0Q2FtZXJhQ2hyb21lLmt0JykKaWYgY2hyb21lLmV4aXN0cygpOgogcz1jaHJvbWUucmVhZF90ZXh0KCkKIG9sZD0nJycgICAgICAgICAgICByb290LmFkZFZpZXcoY29udHJvbFJhaWwpCiAgICAgICAgICAgIHBsYWNlUmFpbCgpJycnCiBpZiBvbGQgaW4gczoKICBzPXMucmVwbGFjZShvbGQsJycnICAgICAgICAgICAgLy8gRklWRU1PRFMgMTI6IHJlbW92ZSB0aGUgY3Jvd2RlZCBzaWRlLWNvbnRyb2wgcmFpbCBmcm9tIHByZXZpZXcuCiAgICAgICAgICAgIGNvbnRyb2xSYWlsLnZpc2liaWxpdHkgPSBWaWV3LkdPTkUKICAgICAgICAgICAgcm9vdC5hZGRWaWV3KGNvbnRyb2xSYWlsKQogICAgICAgICAgICBwbGFjZVJhaWwoKScnJywxKQogIGNocm9tZS53cml0ZV90ZXh0KHMpCnByaW50KCdGSVZFTU9EUyAxMiBVSSBwYXRjaCBhcHBsaWVkIHRvIGFjdHVhbCBLb3RsaW4gc291cmNlJykK' | base64 -d > /tmp/fivemods12_ui_patch.py
+          python3 /tmp/fivemods12_ui_patch.py
+          git diff --check
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Verify source contracts
+        run: python3 ci/verify_source_contracts.py
+      - name: Build APK and unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
+      - name: Upload FIVEMODS 12 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIVEMODS-12-TRANSPARENT-BOTTOM-RECORD-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
