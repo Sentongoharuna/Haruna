@@ -1,0 +1,103 @@
+name: R6 CAMERA 9012 - CONTROL CLEANUP
+run-name: R6 9012 - ${{ github.run_id }} attempt ${{ github.run_attempt }}
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Restore approved R6 S5 02A exclusively
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import yaml,subprocess,os
+          from pathlib import Path
+          p=Path('.github/workflows/00-R6-SECTION5-02-INTERVIEW-HIGH-FIDELITY-REPORT-BURN.yml')
+          assert p.is_file(),'R6 master missing; refuse fallback'
+          steps=yaml.safe_load(p.read_text())['jobs']['build-apk']['steps']
+          names=['Restore exact accepted S5.01 forward baseline','Lock immediate S5.01 inputs','Apply S5.02 high fidelity report-only Interview upgrade','S5.02 exact output hashes','S5.02 high quality and Interview privacy acceptance gate','S5.02 truth safety gate','Prove S5.01 core and all other cameras unchanged']
+          for name in names:
+              matches=[x for x in steps if x.get('name')==name]
+              assert len(matches)==1 and matches[0].get('run'), 'Approved stage missing: '+name
+              subprocess.run(['bash','-e','-o','pipefail'],input=matches[0]['run'],text=True,check=True,env={**os.environ,'GITHUB_RUN_NUMBER':os.getenv('GITHUB_RUN_NUMBER','0')})
+          PY
+      - name: R6 UI patch - fail if actual changes cannot be made
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('app/src/main/java/com/sentongoharuna/pulse')
+          cam=root/'DevelopUgandaCameraActivity.kt'
+          nav=root/'DevelopUgandaCameraModeNavigator.kt'
+          assert cam.exists() and nav.exists()
+          s=cam.read_text(); n=nav.read_text()
+          assert 'r6ApplyRecordSurface(r6RecordingVisualActive)' in s,'R6 recording control missing'
+          assert 'R5: five mode icons at the extreme safe bottom' in n,'Approved R6 navigation missing'
+          assert 'surfaceScrim(240)' not in n,'Old blue navigator detected'
+          # The original R6 source already implements transparent bottom navigation.
+          # Remove only buttons explicitly named LENS BACK and LIGHT OFF when present.
+          # Never edit the recorder, bindings, or camera-mode selection logic.
+          patterns=[
+            r'(?m)^([^\n]*(?:lensButton|torchButton)\.visibility\s*=\s*)View\.VISIBLE([^\n]*)$',
+          ]
+          edits=0
+          for pat in patterns:
+              s,count=re.subn(pat,r'\1View.GONE\2',s)
+              edits+=count
+          # If R6 source uses different control identifiers, stop rather than falsely report success.
+          if edits==0:
+              raise SystemExit('R6 UI control mapping requires inspection; no false successful repair')
+          cam.write_text(s)
+          Path('R6-CHANGE-REPORT.txt').write_text(f'R6 master preserved; {edits} side-button visibility rules changed; navigator verified.\n')
+          PY
+      - name: Unique app identity per build and attempt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,re
+          from pathlib import Path
+          tag='9012'+os.environ['GITHUB_RUN_ID'][-6:]+'a'+os.environ['GITHUB_RUN_ATTEMPT']
+          gradle=Path('app/build.gradle.kts'); s=gradle.read_text()
+          s,c=re.subn(r'applicationId\s*=\s*"[^"]+"',f'applicationId = "com.sentongoharuna.r6cam.v{tag}"',s,count=1)
+          assert c==1
+          s,c=re.subn(r'versionName\s*=\s*"[^"]+"',f'versionName = "R6-{tag}"',s,count=1)
+          assert c==1
+          gradle.write_text(s)
+          manifest=Path('app/src/main/AndroidManifest.xml'); m=manifest.read_text()
+          m,c=re.subn(r'android:label="[^"]+"',f'android:label="R6 Camera {tag}"',m,count=1)
+          assert c==1,'App launcher label not found'
+          manifest.write_text(m)
+          Path('R6-BUILD-ID.txt').write_text(tag)
+          PY
+      - name: Compile APK and unit tests
+        run: gradle --no-daemon --max-workers=2 :app:testDebugUnitTest :app:assembleDebug
+      - name: Prepare uniquely named APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(cat R6-BUILD-ID.txt)"
+          mkdir -p output
+          cp app/build/outputs/apk/debug/app-debug.apk "output/R6-CAMERA-${tag}.apk"
+          cp R6-CHANGE-REPORT.txt output/
+          sha256sum output/*.apk > output/R6-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R6-CAMERA-9012-${{ github.run_id }}-A${{ github.run_attempt }}
+          path: output/
+          if-no-files-found: error
