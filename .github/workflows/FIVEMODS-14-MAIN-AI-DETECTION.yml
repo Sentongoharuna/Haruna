@@ -1,0 +1,63 @@
+name: FIVEMODS 14 - MAIN AI Detection Build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Add ML Kit dependencies and MAIN camera detection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          gradle=Path('app/build.gradle.kts')
+          s=gradle.read_text()
+          assert 'dependencies {' in s
+          for dependency in ['com.google.mlkit:pose-detection:18.0.0-beta5','com.google.mlkit:text-recognition:16.0.1']:
+              if dependency not in s: s=s.replace('dependencies {',f'dependencies {{\n    implementation("{dependency}")',1)
+          gradle.write_text(s)
+          activity=Path('app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt')
+          s=activity.read_text()
+          anchor='        v261ApplyAnamorphicPreview()'
+          assert anchor in s, 'MAIN preview anchor missing: stop, do not produce unchanged APK'
+          if 'duAiDetectionController' not in s:
+              cls='open class DevelopUgandaCameraActivity : AppCompatActivity(), SensorEventListener {'
+              assert cls in s
+              s=s.replace(cls,cls+'\n    private var duAiDetectionController: DevelopUgandaAiDetectionController? = null',1)
+              s=s.replace(anchor,anchor+'''\n        // MAIN-only screen overlay; the video encoder and camera bindings remain unchanged.\n        if (this.javaClass == DevelopUgandaCameraActivity::class.java) {\n            duAiDetectionController = DevelopUgandaAiDetectionController(this, root, previewView)\n            duAiDetectionController?.attach()\n        }\n''',1)
+          activity.write_text(s)
+          PY
+          mkdir -p app/src/main/java/com/sentongoharuna/pulse
+          echo "cGFja2FnZSBjb20uc2VudG9uZ29oYXJ1bmEucHVsc2UKCmltcG9ydCBhbmRyb2lkLmFwcC5BY3Rpdml0eQppbXBvcnQgYW5kcm9pZC5ncmFwaGljcy5Db2xvcgppbXBvcnQgYW5kcm9pZC5ncmFwaGljcy5UeXBlZmFjZQppbXBvcnQgYW5kcm9pZC5vcy5IYW5kbGVyCmltcG9ydCBhbmRyb2lkLm9zLkxvb3BlcgppbXBvcnQgYW5kcm9pZC52aWV3LkdyYXZpdHkKaW1wb3J0IGFuZHJvaWQudmlldy5WaWV3CmltcG9ydCBhbmRyb2lkLndpZGdldC5GcmFtZUxheW91dAppbXBvcnQgYW5kcm9pZC53aWRnZXQuVGV4dFZpZXcKaW1wb3J0IGFuZHJvaWR4LmNhbWVyYS52aWV3LlByZXZpZXdWaWV3CmltcG9ydCBjb20uZ29vZ2xlLm1sa2l0LnZpc2lvbi5jb21tb24uSW5wdXRJbWFnZQppbXBvcnQgY29tLmdvb2dsZS5tbGtpdC52aXNpb24ucG9zZS5Qb3NlRGV0ZWN0aW9uCmltcG9ydCBjb20uZ29vZ2xlLm1sa2l0LnZpc2lvbi5wb3NlLmRlZmF1bHRzLlBvc2VEZXRlY3Rvck9wdGlvbnMKaW1wb3J0IGNvbS5nb29nbGUubWxraXQudmlzaW9uLnRleHQuVGV4dFJlY29nbml0aW9uCmltcG9ydCBjb20uZ29vZ2xlLm1sa2l0LnZpc2lvbi50ZXh0LmxhdGluLlRleHRSZWNvZ25pemVyT3B0aW9ucwoKLyoqIE9wdGlvbmFsLCBzY3JlZW4tb25seSBhbmFseXNpcyBvZiBNQUlOIHByZXZpZXcgZnJhbWVzLiBEb2VzIG5vdCB0b3VjaCBlbmNvZGVyIG91dHB1dHMuICovCmNsYXNzIERldmVsb3BVZ2FuZGFBaURldGVjdGlvbkNvbnRyb2xsZXIoCiAgICBwcml2YXRlIHZhbCBhY3Rpdml0eTogQWN0aXZpdHksCiAgICBwcml2YXRlIHZhbCByb290OiBGcmFtZUxheW91dCwKICAgIHByaXZhdGUgdmFsIHByZXZpZXc6IFByZXZpZXdWaWV3LAopIHsKICAgIHByaXZhdGUgdmFsIGhhbmRsZXIgPSBIYW5kbGVyKExvb3Blci5nZXRNYWluTG9vcGVyKCkpCiAgICBwcml2YXRlIHZhbCBwb3NlID0gUG9zZURldGVjdGlvbi5nZXRDbGllbnQoUG9zZURldGVjdG9yT3B0aW9ucy5CdWlsZGVyKCkKICAgICAgICAuc2V0RGV0ZWN0b3JNb2RlKFBvc2VEZXRlY3Rvck9wdGlvbnMuU1RSRUFNX01PREUpLmJ1aWxkKCkpCiAgICBwcml2YXRlIHZhbCB0ZXh0ID0gVGV4dFJlY29nbml0aW9uLmdldENsaWVudChUZXh0UmVjb2duaXplck9wdGlvbnMuREVGQVVMVF9PUFRJT05TKQogICAgcHJpdmF0ZSB2YXIgbW9kZSA9IDAgLy8gMCBvZmYsIDEgcGVvcGxlLCAyIGNhbmRpZGF0ZSBwbGF0ZXMKICAgIHByaXZhdGUgdmFyIGJ1c3kgPSBmYWxzZQogICAgcHJpdmF0ZSB2YXIgY291bnQgPSAwCiAgICBwcml2YXRlIHZhciBjbG9zZWQgPSBmYWxzZQogICAgcHJpdmF0ZSB2YWwgYnV0dG9uID0gVGV4dFZpZXcoYWN0aXZpdHkpLmFwcGx5IHsKICAgICAgICB0ZXh0ID0gIkFJIE9GRiIKICAgICAgICB0ZXh0U2l6ZSA9IDEyZgogICAgICAgIHR5cGVmYWNlID0gVHlwZWZhY2UuREVGQVVMVF9CT0xECiAgICAgICAgc2V0VGV4dENvbG9yKENvbG9yLldISVRFKQogICAgICAgIHNldEJhY2tncm91bmRDb2xvcigweDY2MDAwMDAwKQogICAgICAgIGdyYXZpdHkgPSBHcmF2aXR5LkNFTlRFUgogICAgICAgIGNvbnRlbnREZXNjcmlwdGlvbiA9ICJUb2dnbGUgTUFJTiBjYW1lcmEgQUkgZGV0ZWN0aW9uIgogICAgICAgIHNldFBhZGRpbmcoMTQsIDEwLCAxNCwgMTApCiAgICB9CiAgICBwcml2YXRlIHZhbCByZWFkb3V0ID0gVGV4dFZpZXcoYWN0aXZpdHkpLmFwcGx5IHsKICAgICAgICB0ZXh0U2l6ZSA9IDEyZgogICAgICAgIHNldFRleHRDb2xvcihDb2xvci5XSElURSkKICAgICAgICBzZXRCYWNrZ3JvdW5kQ29sb3IoMHg2NjAwMDAwMCkKICAgICAgICBncmF2aXR5ID0gR3Jhdml0eS5DRU5URVIKICAgICAgICB2aXNpYmlsaXR5ID0gVmlldy5HT05FCiAgICB9CiAgICBwcml2YXRlIHZhbCB0aWNrID0gb2JqZWN0IDogUnVubmFibGUgewogICAgICAgIG92ZXJyaWRlIGZ1biBydW4oKSB7CiAgICAgICAgICAgIGlmIChjbG9zZWQpIHJldHVybgogICAgICAgICAgICBpZiAobW9kZSAhPSAwICYmICFidXN5ICYmIHByZXZpZXcud2lkdGggPiAwICYmIHByZXZpZXcuaGVpZ2h0ID4gMCkgYW5hbHl6ZSgpCiAgICAgICAgICAgIGhhbmRsZXIucG9zdERlbGF5ZWQodGhpcywgOTAwTCkKICAgICAgICB9CiAgICB9CiAgICBmdW4gYXR0YWNoKCkgewogICAgICAgIHZhbCBkcCA9IGFjdGl2aXR5LnJlc291cmNlcy5kaXNwbGF5TWV0cmljcy5kZW5zaXR5CiAgICAgICAgdmFsIHRvcCA9ICgxMDAgKiBkcCkudG9JbnQoKQogICAgICAgIHJvb3QuYWRkVmlldyhidXR0b24sIEZyYW1lTGF5b3V0LkxheW91dFBhcmFtcygoOTggKiBkcCkudG9JbnQoKSwoNDQgKiBkcCkudG9JbnQoKSxHcmF2aXR5LlRPUCBvciBHcmF2aXR5LkVORCkuYXBwbHkgewogICAgICAgICAgICB0b3BNYXJnaW49dG9wOyBtYXJnaW5FbmQ9KDEwKmRwKS50b0ludCgpCiAgICAgICAgfSkKICAgICAgICByb290LmFkZFZpZXcocmVhZG91dCwgRnJhbWVMYXlvdXQuTGF5b3V0UGFyYW1zKCgyMjAqZHApLnRvSW50KCksKDU2KmRwKS50b0ludCgpLEdyYXZpdHkuVE9QIG9yIEdyYXZpdHkuQ0VOVEVSX0hPUklaT05UQUwpLmFwcGx5IHsKICAgICAgICAgICAgdG9wTWFyZ2luPXRvcAogICAgICAgIH0pCiAgICAgICAgYnV0dG9uLnNldE9uQ2xpY2tMaXN0ZW5lciB7CiAgICAgICAgICAgIG1vZGU9KG1vZGUrMSklMwogICAgICAgICAgICBidXR0b24udGV4dD13aGVuKG1vZGUpezEtPiJBSSBQRU9QTEUiOzItPiJBSSBQTEFURVMiO2Vsc2UtPiJBSSBPRkYifQogICAgICAgICAgICByZWFkb3V0LnZpc2liaWxpdHk9aWYobW9kZT09MCkgVmlldy5HT05FIGVsc2UgVmlldy5WSVNJQkxFCiAgICAgICAgICAgIHJlYWRvdXQudGV4dD13aGVuKG1vZGUpezEtPiJQRVJTT04gREVURUNUSU9OIFJFQURZIjsyLT4iUExBVEUgVEVYVCBTQ0FOIFJFQURZIjtlbHNlLT4iIn0KICAgICAgICB9CiAgICAgICAgaGFuZGxlci5wb3N0KHRpY2spCiAgICB9CiAgICBwcml2YXRlIGZ1biBhbmFseXplKCkgewogICAgICAgIGJ1c3k9dHJ1ZQogICAgICAgIC8vIFByZXZpZXcgYml0bWFwIGlzIHNhbXBsZWQ7IG5vIGFkZGl0aW9uYWwgQ2FtZXJhWCB1c2UgY2FzZSBjYW4gZGlzcnVwdCByZWNvcmRpbmcuCiAgICAgICAgdmFsIGJpdG1hcD1wcmV2aWV3LmJpdG1hcAogICAgICAgIGlmKGJpdG1hcD09bnVsbCl7YnVzeT1mYWxzZTtyZXR1cm59CiAgICAgICAgdmFsIGltYWdlPUlucHV0SW1hZ2UuZnJvbUJpdG1hcChiaXRtYXAsMCkKICAgICAgICBpZihtb2RlPT0xKSB7CiAgICAgICAgICAgIHBvc2UucHJvY2VzcyhpbWFnZSkuYWRkT25TdWNjZXNzTGlzdGVuZXIgeyByZXN1bHQgLT4KICAgICAgICAgICAgICAgIHZhbCB2aXNpYmxlPXJlc3VsdC5hbGxQb3NlTGFuZG1hcmtzLmNvdW50IHsgaXQuaW5GcmFtZUxpa2VsaWhvb2Q+MC42ZiB9CiAgICAgICAgICAgICAgICBpZih2aXNpYmxlPj01KSBjb3VudCsrCiAgICAgICAgICAgICAgICByZWFkb3V0LnRleHQ9aWYodmlzaWJsZT49NSkgIlBFUlNPTiBQUkVTRU5UIOKAoiBzYW1wbGVkIGZyYW1lczogJGNvdW50IiBlbHNlICJOTyBQRVJTT04gQ09ORklSTUVEIgogICAgICAgICAgICB9LmFkZE9uRmFpbHVyZUxpc3RlbmVyIHsgcmVhZG91dC50ZXh0PSJQRU9QTEUgREVURUNUSU9OIFVOQVZBSUxBQkxFIiB9CiAgICAgICAgICAgICAgICAuYWRkT25Db21wbGV0ZUxpc3RlbmVyIHsgYml0bWFwLnJlY3ljbGUoKTtidXN5PWZhbHNlIH0KICAgICAgICB9IGVsc2UgewogICAgICAgICAgICB0ZXh0LnByb2Nlc3MoaW1hZ2UpLmFkZE9uU3VjY2Vzc0xpc3RlbmVyIHsgcmVzdWx0IC0+CiAgICAgICAgICAgICAgICB2YWwgY2FuZGlkYXRlcz1yZXN1bHQudGV4dEJsb2Nrcy5mbGF0TWFwIHsgaXQubGluZXMgfS5tYXAgeyBpdC50ZXh0LnVwcGVyY2FzZSgpLnJlcGxhY2UoIiAiLCIiKSB9CiAgICAgICAgICAgICAgICAgICAgLmZpbHRlciB7IGl0Lmxlbmd0aCBpbiA1Li4xMiAmJiBpdC5hbnkoQ2hhcjo6aXNEaWdpdCkgJiYgaXQuYW55KENoYXI6OmlzTGV0dGVyKSB9CiAgICAgICAgICAgICAgICByZWFkb3V0LnRleHQ9aWYoY2FuZGlkYXRlcy5pc0VtcHR5KCkpICJOTyBQTEFURSBURVhUIENPTkZJUk1FRCIgZWxzZSAiQ0FORElEQVRFIFRFWFQ6ICR7Y2FuZGlkYXRlcy50YWtlKDIpLmpvaW5Ub1N0cmluZygpfSIKICAgICAgICAgICAgfS5hZGRPbkZhaWx1cmVMaXN0ZW5lciB7IHJlYWRvdXQudGV4dD0iVEVYVCBSRUNPR05JVElPTiBVTkFWQUlMQUJMRSIgfQogICAgICAgICAgICAgICAgLmFkZE9uQ29tcGxldGVMaXN0ZW5lciB7IGJpdG1hcC5yZWN5Y2xlKCk7YnVzeT1mYWxzZSB9CiAgICAgICAgfQogICAgfQp9Cg==" | base64 -d > app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaAiDetectionController.kt
+          git diff --stat
+          grep -q 'duAiDetectionController?.attach()' app/src/main/java/com/sentongoharuna/pulse/DevelopUgandaCameraActivity.kt
+      - name: Compile and run unit tests
+        run: gradle --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIVEMODS-14-MAIN-AI-DETECTION-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      - name: Upload change evidence
+        if: always()
+        run: git diff > /tmp/fivemods-14-diff.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FIVEMODS-14-SOURCE-DIFF
+          path: /tmp/fivemods-14-diff.txt
+          if-no-files-found: warn
